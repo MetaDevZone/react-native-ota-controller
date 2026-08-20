@@ -1,7 +1,7 @@
 # react-native-ota-updater
 
 [![npm version](https://img.shields.io/npm/v/react-native-ota-updater.svg)](https://www.npmjs.com/package/react-native-ota-updater)
-[![license](https://img.shields.io/npm/l/react-native-ota-updater.svg)](https://github.com/saad.com/react-native-ota-updater/blob/main/LICENSE)
+[![license](https://img.shields.io/npm/l/react-native-ota-updater.svg)](https://github.com/metadevzone/react-native-ota-controller/blob/main/LICENSE)
 
 A lightweight, production-ready **Over-The-Air (OTA)** JavaScript bundle and asset updater for React Native applications (Android & iOS). Push bug fixes, UI updates, and feature enhancements directly to your users instantly without waiting for Play Store or App Store review cycles.
 
@@ -439,4 +439,4 @@ When `<OTAUpdater androidOtaVersion={X} />` runs:
 
 ## 📄 License
 
-MIT © Saadullah
+MIT © metadevzone

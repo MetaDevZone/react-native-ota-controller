@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.authors      = package["author"]
 
   s.platforms    = { :ios => min_ios_version_supported }
-  s.source       = { :git => "https://github.com/saad.com/react-native-ota-updater.git", :tag => "#{s.version}" }
+  s.source       = { :git => "https://github.com/metadevzone/react-native-ota-controller.git", :tag => "#{s.version}" }
 
   s.swift_version = "5.0"
   s.source_files = "ios/**/*.{h,m,mm,swift,cpp}"

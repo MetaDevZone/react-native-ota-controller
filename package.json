@@ -1,6 +1,6 @@
 {
   "name": "react-native-ota-updater",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Native module for handling OTA JS bundle updates in React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -48,14 +48,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/saad.com/react-native-ota-updater.git"
+    "url": "git+https://github.com/metadevzone/react-native-ota-controller.git"
   },
-  "author": "Saadullah <SaadUllah@metalogixtech.comSaadullah@metalogixtech.com> (https://github.com/saad.com)",
+  "author": "metadevzone",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/saad.com/react-native-ota-updater/issues"
+    "url": "https://github.com/metadevzone/react-native-ota-controller/issues"
   },
-  "homepage": "https://github.com/saad.com/react-native-ota-updater#readme",
+  "homepage": "https://github.com/metadevzone/react-native-ota-controller#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
