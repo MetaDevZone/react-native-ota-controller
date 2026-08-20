@@ -1,0 +1,1 @@
+{"version":3,"file":"OTADownloader.d.ts","sourceRoot":"","sources":["../../../src/OTADownloader.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,YAAY,CAAC;AA4GtD,cAAM,kBAAkB;YACR,iBAAiB;IAOzB,cAAc,CAClB,GAAG,EAAE,MAAM,EACX,OAAO,EAAE,MAAM,EACf,UAAU,EAAE,mBAAmB,GAC9B,OAAO,CAAC,MAAM,CAAC;CAQnB;AAED,eAAO,MAAM,aAAa,oBAA2B,CAAC"}
