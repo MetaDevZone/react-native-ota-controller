@@ -3,21 +3,21 @@ import { unzip } from 'react-native-zip-archive';
 import {
   OTA_ROOT_DIR,
   OTA_BUNDLES_DIR,
+  OTA_DOWNLOAD_DIR,
+  OTA_STAGING_DIR,
   OTA_CURRENT_FILE,
 } from './OTAConstants';
 import type { OTACurrentInfo } from './OTATypes';
 
 export type BundleMeta = {
   appVersion: string;
-  androidOtaVersion?: number;
-  iosOtaVersion?: number;
+  otaVersion?: number;
   builtAt?: string;
 };
 
-
 class OTAStorageClass {
   async ensureRootDirs() {
-    for (const dir of [OTA_ROOT_DIR, OTA_BUNDLES_DIR]) {
+    for (const dir of [OTA_ROOT_DIR, OTA_BUNDLES_DIR, OTA_DOWNLOAD_DIR]) {
       const exists = await RNFS.exists(dir);
       if (!exists) {
         await RNFS.mkdir(dir);
@@ -46,6 +46,49 @@ class OTAStorageClass {
     }
 
     return targetDir;
+  }
+
+  async extractToStaging(zipPath: string): Promise<string> {
+    await this.ensureRootDirs();
+    const stagingDir = OTA_STAGING_DIR;
+
+    const exists = await RNFS.exists(stagingDir);
+    if (exists) {
+      await RNFS.unlink(stagingDir);
+    }
+
+    await unzip(zipPath, stagingDir);
+
+    const zipExists = await RNFS.exists(zipPath);
+    if (zipExists) {
+      await RNFS.unlink(zipPath);
+    }
+
+    return stagingDir;
+  }
+
+  async promoteStaging(version: number): Promise<string> {
+    await this.ensureRootDirs();
+    const targetDir = this.bundleDirForVersion(version);
+
+    const targetExists = await RNFS.exists(targetDir);
+    if (targetExists) {
+      await RNFS.unlink(targetDir);
+    }
+
+    await RNFS.moveFile(OTA_STAGING_DIR, targetDir);
+    return targetDir;
+  }
+
+  async cleanupStaging(): Promise<void> {
+    try {
+      const exists = await RNFS.exists(OTA_STAGING_DIR);
+      if (exists) {
+        await RNFS.unlink(OTA_STAGING_DIR);
+      }
+    } catch {
+      // Ignore cleanup error
+    }
   }
 
   async readCurrent(): Promise<OTACurrentInfo | null> {

@@ -1,5 +1,4 @@
 export * from './OTATypes';
-export { OTAHash } from './OTAHash';
 export { OTADownloader } from './OTADownloader';
 export { OTAStorage } from './OTAStorage';
 export { OTAService } from './OTAService';

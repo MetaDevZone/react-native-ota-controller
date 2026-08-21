@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 import { OTADownloader } from './OTADownloader';
 import { OTAStorage } from './OTAStorage';
 import type { BundleMeta } from './OTAStorage';
-// import { OTAHash } from './OTAHash';
 import type {
   OTACurrentInfo,
   OTADownloadOptions,
@@ -29,7 +28,7 @@ class OTAServiceClass {
     }
     isDownloading = true;
 
-    const { downloadUrl, bundleVersion, hash, onProgress, autoRestart } = options;
+    const { downloadUrl, bundleVersion, onProgress, autoRestart } = options;
 
     const emit = (
       partial: Omit<OTAProgressPayload, 'downloadedBytes' | 'totalBytes' | 'downloadedMB' | 'totalMB'> & {
@@ -54,49 +53,46 @@ class OTAServiceClass {
 
       const zipPath = await OTADownloader.downloadBundle(
         downloadUrl,
-        bundleVersion,
-        onProgress
+        onProgress,
+        bundleVersion
       );
 
-      // const isValid = await OTAHash.verify(zipPath, hash ?? '');
-      // if (!isValid) {
-      //   throw new Error('OTA: hash verification failed, bundle corrupt');
-      // }
-
-      const bundleDir = await OTAStorage.extractBundle(zipPath, bundleVersion);
-
-      const meta: BundleMeta | null = await OTAStorage.readBundleMeta(bundleDir);
+      const stagingDir = await OTAStorage.extractToStaging(zipPath);
+      const meta: BundleMeta | null = await OTAStorage.readBundleMeta(stagingDir);
       const nativeVersion = await getAppVersion();
-      if (meta === null) {
-        console.warn('OTA: bundle has no meta.json, skipping version verification');
-      } else {
-        if (meta.appVersion !== nativeVersion) {
-          await OTAStorage.deleteBundleVersion(bundleVersion);
-          emit({ status: 'failed', percentage: 0 });
-          throw new Error(
-            `OTA: app version mismatch — bundle=${meta.appVersion}, device=${nativeVersion}`
-          );
-        }
 
-        const metaBundleVersion =
-          Platform.OS === 'ios' ? meta.iosOtaVersion : meta.androidOtaVersion;
-        if (metaBundleVersion !== undefined && metaBundleVersion !== bundleVersion) {
-          await OTAStorage.deleteBundleVersion(bundleVersion);
-          emit({ status: 'failed', percentage: 0 });
-          throw new Error(
-            `OTA: bundle version mismatch — expected ${bundleVersion}, meta.json has ${metaBundleVersion}`
-          );
-        }
+      if (meta === null) {
+        await OTAStorage.cleanupStaging();
+        emit({ status: 'failed', percentage: 0 });
+        throw new Error('OTA: bundle has no meta.json, invalid package');
       }
+
+      if (meta.appVersion !== nativeVersion) {
+        await OTAStorage.cleanupStaging();
+        emit({ status: 'failed', percentage: 0 });
+        throw new Error(
+          `OTA: app version mismatch — bundle=${meta.appVersion}, device=${nativeVersion}`
+        );
+      }
+
+      const targetOtaVersion = meta.otaVersion ?? bundleVersion ?? 1;
+      const activeVersion = await this.getActiveVersion();
+
+      if (targetOtaVersion <= activeVersion) {
+        await OTAStorage.cleanupStaging();
+        emit({ status: 'downloaded', percentage: 100 });
+        return { updated: false, version: activeVersion };
+      }
+
+      const bundleDir = await OTAStorage.promoteStaging(targetOtaVersion);
 
       const bundleFileName =
         Platform.OS === 'ios' ? OTA_BUNDLE_FILE_NAME_IOS : OTA_BUNDLE_FILE_NAME;
       const bundlePath = `${bundleDir}/${bundleFileName}`;
 
       const newCurrent: OTACurrentInfo = {
-        activeVersion: bundleVersion,
+        activeVersion: targetOtaVersion,
         activeBundlePath: bundlePath,
-        hash: hash ?? '',
         updatedAt: new Date().toISOString(),
         bootFailCount: 0,
         builtForNativeVersion: nativeVersion,
@@ -104,7 +100,7 @@ class OTAServiceClass {
 
       await OTAStorage.writeCurrent(newCurrent);
 
-      if (previous) {
+      if (previous && previous.activeVersion !== targetOtaVersion) {
         await OTAStorage.deleteBundleVersion(previous.activeVersion);
       }
 
@@ -115,8 +111,9 @@ class OTAServiceClass {
         restartApp();
       }
 
-      return { updated: true, version: bundleVersion };
+      return { updated: true, version: targetOtaVersion };
     } catch (err: any) {
+      await OTAStorage.cleanupStaging();
       emit({ status: 'failed', percentage: 0 });
       throw err;
     } finally {

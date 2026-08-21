@@ -1,7 +1,6 @@
 export interface OTACurrentInfo {
     activeVersion: number;
     activeBundlePath: string;
-    hash: string;
     updatedAt: string;
     bootFailCount: number;
     builtForNativeVersion: string;
@@ -17,9 +16,8 @@ export interface OTAProgressPayload {
 export type OTAProgressCallback = (payload: OTAProgressPayload) => void;
 export interface OTADownloadOptions {
     downloadUrl: string;
-    bundleVersion: number;
+    bundleVersion?: number;
     autoRestart?: boolean;
-    hash?: string;
     onProgress: OTAProgressCallback;
 }
 //# sourceMappingURL=OTATypes.d.ts.map

@@ -56,7 +56,7 @@ To prevent version conflicts with native modules, `react-native-ota-updater` rel
 
 ---
 
-## ⚙️ Step-by-Step Installation & Native Setup
+## ⚙️ Step-by-Step Installation & Setup
 
 ### 1. Install Packages
 
@@ -70,6 +70,13 @@ npm install react-native-ota-updater react-native-fs react-native-zip-archive
 yarn add react-native-ota-updater react-native-fs react-native-zip-archive
 ```
 
+> ⚡ **Zero-Config Auto Setup**: Upon installation, `react-native-ota-updater` automatically configures `MainApplication.kt` (Android) and `AppDelegate.swift` (iOS) via its `postinstall` script!
+>
+> If you ever need to re-run the configuration script manually:
+> ```bash
+> npx ota-bundle setup
+> ```
+
 #### iOS CocoaPods Link
 ```bash
 cd ios && pod install && cd ..
@@ -77,12 +84,15 @@ cd ios && pod install && cd ..
 
 ---
 
-### 2. Android Setup (`MainApplication.kt`)
+### 2. Manual Native Setup (Optional / Reference)
 
-Open `android/app/src/main/java/.../MainApplication.kt` (or `.java`).
+If you have a custom project structure or prefer configuring manually:
 
-#### New Architecture (React Native 0.76+ with `reactHost`)
+#### Android Setup (`MainApplication.kt`)
 
+Open `android/app/src/main/java/.../MainApplication.kt`:
+
+##### New Architecture (React Native 0.76+ with `reactHost`)
 ```kotlin
 package com.yourapp
 
@@ -99,17 +109,14 @@ class MainApplication : Application(), ReactApplication {
   override val reactHost: ReactHost by lazy {
     getDefaultReactHost(
       context = applicationContext,
-      packageList = PackageList(this).packages.apply {
-        add(OTAUpdater.getRestartPackage()) // 👈 2. Register restart package
-      },
-      jsBundleFilePath = OTAUpdater.resolveBundlePath(applicationContext) // 👈 3. Resolve active OTA bundle path
+      packageList = PackageList(this).packages,
+      jsBundleFilePath = OTAUpdater.resolveBundlePath(applicationContext) // 👈 2. Resolve active OTA bundle path
     )
   }
 }
 ```
 
-#### Legacy Architecture (`reactNativeHost`)
-
+##### Legacy Architecture (`reactNativeHost`)
 ```kotlin
 package com.yourapp
 
@@ -128,16 +135,14 @@ class MainApplication : Application(), ReactApplication {
         OTAUpdater.resolveBundlePath(applicationContext) // 👈 2. Resolve active OTA bundle path
 
       override fun getPackages(): List<ReactPackage> =
-        PackageList(this).packages.apply {
-          add(OTAUpdater.getRestartPackage()) // 👈 3. Register restart package
-        }
+        PackageList(this).packages
     }
 }
 ```
 
 ---
 
-### 3. iOS Setup (`AppDelegate.swift`)
+#### iOS Setup (`AppDelegate.swift`)
 
 Open `ios/<YourProjectName>/AppDelegate.swift`. Update `bundleURL()` to resolve the active OTA bundle path:
 
@@ -197,8 +202,6 @@ export default function App() {
 
       <OTAUpdater
         url="https://your-server.com/bundles/bundle-android.zip"
-        androidOtaVersion={1}
-        iosOtaVersion={1}
         autoRestart={true}
         callbacks={{
           onStateChange: (state) => {
@@ -265,23 +268,31 @@ async function handleUpdateFlow() {
 
 ## 🛠️ CLI Bundle Generation (`npx ota-bundle`)
 
-The package includes a built-in CLI tool `npx ota-bundle` that compiles React Native JS bundles, bundles assets, injects `meta.json`, and creates zip packages for Android & iOS.
+The package includes a built-in CLI tool `npx ota-bundle` that compiles React Native JS bundles, bundles assets, tracks & increments OTA versions, injects `meta.json`, and creates zip packages for Android & iOS.
 
 ### Commands
 
 Run from your React Native project root:
 
 ```bash
-# Auto-detect native appVersion from build.gradle / Info.plist:
+# Build bundles for BOTH Android and iOS:
+npx ota-bundle
+
+# Or build for a specific platform:
 npx ota-bundle android
 npx ota-bundle ios
-npx ota-bundle all
 
-# Optional strict version flags (embeds otaVersion inside meta.json):
-npx ota-bundle android --android-ota-version 1
-npx ota-bundle ios --ios-ota-version 1
-npx ota-bundle all --android-ota-version 1 --ios-ota-version 1
+# Optional manual overrides (skips auto-increment for that run):
+npx ota-bundle --ota-version 3
+npx ota-bundle android --android-ota-version 3
+npx ota-bundle ios --ios-ota-version 3
 ```
+
+### Automatic Version Tracking (`.ota-version.json`)
+When you run `npx ota-bundle`:
+1. The CLI detects your native app version from `build.gradle` (Android) and `project.pbxproj` / `Info.plist` (iOS).
+2. It auto-increments the `otaVersion` for each build (1 ➔ 2 ➔ 3...).
+3. If the native version changes (e.g. `1.0.0` ➔ `1.0.1`), the `otaVersion` is **automatically reset back to `1`**.
 
 ### Artifact Outputs
 The CLI creates an `ota-dist/` folder containing:
@@ -297,7 +308,7 @@ Upload these zip files to your static server, S3 bucket, or CDN.
 ```
 [ Developer ]
    │
-   ├─► Runs `npx ota-bundle all` ──► Generates bundle zip files in `ota-dist/`
+   ├─► Runs `npx ota-bundle` ──► Auto-increments OTA version & generates zip files in `ota-dist/`
    └─► Uploads zip files to CDN / Server
  
 [ Native App Startup (Before JS Engine Runs) ]
@@ -317,8 +328,8 @@ Upload these zip files to your static server, S3 bucket, or CDN.
    │     └─► Version > Active  ──► Starts download & emits 'downloading'
    │
    ├─► Downloads zip (3 retries with HEAD connectivity check)
-   ├─► Verifies optional SHA-256 hash & extracts zip
-   ├─► Verifies `meta.json` (native appVersion & platform otaVersion match)
+   ├─► Extracts zip to staging directory
+   ├─► Verifies `meta.json` (native appVersion & otaVersion match)
    ├─► Atomically updates `current.json` & deletes old bundle folder
    └─► If `autoRestart` is true ──► Calls `restartApp()`
 ```
@@ -337,7 +348,6 @@ Upload these zip files to your static server, S3 bucket, or CDN.
 {
   "activeVersion": 2,
   "activeBundlePath": "/path/to/OTA/bundles/bundle2/index.android.bundle",
-  "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "updatedAt": "2026-08-12T16:00:00.000Z",
   "bootFailCount": 0,
   "builtForNativeVersion": "1.0.0"
@@ -362,8 +372,7 @@ During update installation, `current.json` is written using a 3-step atomic proc
 ```json
 {
   "appVersion": "1.0.0",
-  "androidOtaVersion": 2,
-  "iosOtaVersion": 2,
+  "otaVersion": 2,
   "builtAt": "2026-08-12T16:00:00.000Z"
 }
 ```
@@ -371,7 +380,7 @@ During update installation, `current.json` is written using a 3-step atomic proc
 #### Why is it used?
 When an update zip is extracted on device, `OTAService` reads `meta.json` BEFORE applying the bundle:
 1. **Native Version Guard:** If `meta.json` has `"appVersion": "1.1.0"` but the device is running Native App `"1.0.0"`, the bundle is immediately rejected and deleted. This prevents JS code that depends on new native modules from crashing old native builds.
-2. **OTA Version Guard:** If `--android-ota-version` was specified at build time, it verifies that the bundle version matches the expected target version.
+2. **OTA Version Guard:** Verifies that the bundle's `otaVersion` matches the expected target version.
 
 ---
 
@@ -398,10 +407,13 @@ If a buggy OTA bundle with JS syntax errors or unhandled exceptions is deployed:
 
 ### 5. Version Comparison & Downgrade Prevention
 
-When `<OTAUpdater androidOtaVersion={X} />` runs:
-- `activeVersion` is read from `current.json` (defaults to `0` for fresh installs).
-- If `bundleVersion <= activeVersion`, the update process **instantly skips** and emits status `'downloaded'`. No network request or file download takes place.
-- Only when `bundleVersion > activeVersion` will a download be executed.
+When `<OTAUpdater url="..." />` runs:
+- The bundle `.zip` is downloaded and extracted to a secure staging directory.
+- `meta.json` inside the bundle is inspected before applying:
+  - **Native Guard:** Ensures `meta.appVersion === deviceAppVersion`.
+  - **OTA Guard:** Ensures `meta.otaVersion > activeVersion`.
+- If `meta.otaVersion <= activeVersion`, the bundle is **discarded safely** and emits status `'downloaded'` without restarting or applying old code.
+- Only when `meta.otaVersion > activeVersion` will the bundle be promoted and applied.
 
 ---
 
@@ -412,10 +424,7 @@ When `<OTAUpdater androidOtaVersion={X} />` runs:
 | Prop | Type | Required | Description |
 |---|---|---|---|
 | `url` | `string` | Yes | Download URL of the compiled bundle `.zip` file |
-| `androidOtaVersion` | `number` | Yes | Target OTA bundle version number for Android |
-| `iosOtaVersion` | `number` | Yes | Target OTA bundle version number for iOS |
 | `autoRestart` | `boolean` | No | Auto-restart app after successful install. Default: `false` |
-| `bundleHash` | `string` | No | Optional SHA-256 hash for bundle integrity verification |
 | `callbacks` | `OTAUpdaterCallbacks` | No | Event handlers (`onProgress`, `onStateChange`, `onError`) |
 
 ### `OTAProgressPayload`

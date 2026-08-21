@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
 import { OTAService } from './OTAService';
 import type { OTAProgressPayload } from './OTATypes';
 
@@ -19,9 +18,6 @@ export interface OTAUpdaterCallbacks {
 
 export interface OTAUpdaterProps {
   url: string;
-  androidOtaVersion: number;
-  iosOtaVersion: number;
-  bundleHash?: string;
   autoRestart?: boolean;
   callbacks?: OTAUpdaterCallbacks;
 }
@@ -29,22 +25,16 @@ export interface OTAUpdaterProps {
 export function OTAUpdater(props: OTAUpdaterProps): null {
   const {
     url,
-    androidOtaVersion,
-    iosOtaVersion,
-    bundleHash,
     autoRestart,
     callbacks,
   } = props;
 
   const propsRef = useRef({
     url,
-    androidOtaVersion,
-    iosOtaVersion,
-    bundleHash,
     autoRestart,
     callbacks,
   });
-  propsRef.current = { url, androidOtaVersion, iosOtaVersion, bundleHash, autoRestart, callbacks };
+  propsRef.current = { url, autoRestart, callbacks };
 
   const cancelledRef = useRef(false);
 
@@ -53,15 +43,11 @@ export function OTAUpdater(props: OTAUpdaterProps): null {
 
     const {
       url: mountUrl,
-      androidOtaVersion: mountAndroid,
-      iosOtaVersion: mountIos,
-      bundleHash: mountHash,
       autoRestart: mountAutoRestart,
       callbacks: mountCallbacks,
     } = propsRef.current;
 
-    const bundleVersion =
-      Platform.OS === 'ios' ? mountIos : mountAndroid;
+    if (!mountUrl) return;
 
     let started = false;
 
@@ -73,21 +59,10 @@ export function OTAUpdater(props: OTAUpdaterProps): null {
 
         mountCallbacks?.onStateChange?.('checking');
 
-        const activeVersion = await OTAService.getActiveVersion();
-
-        if (bundleVersion <= activeVersion) {
-          mountCallbacks?.onStateChange?.('downloaded');
-          return;
-        }
-
-        if (cancelledRef.current) return;
-
         started = true;
 
         await OTAService.downloadAndApplyUpdate({
           downloadUrl: mountUrl,
-          bundleVersion,
-          hash: mountHash,
           autoRestart: mountAutoRestart,
           onProgress: (payload: OTAProgressPayload) => {
             if (cancelledRef.current) return;
@@ -119,7 +94,7 @@ export function OTAUpdater(props: OTAUpdaterProps): null {
       cancelledRef.current = true;
       if (!started) return;
     };
-  }, []);
+  }, [url]);
 
   return null;
 }

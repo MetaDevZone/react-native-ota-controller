@@ -13,9 +13,6 @@ export interface OTAUpdaterCallbacks {
 }
 export interface OTAUpdaterProps {
     url: string;
-    androidOtaVersion: number;
-    iosOtaVersion: number;
-    bundleHash?: string;
     autoRestart?: boolean;
     callbacks?: OTAUpdaterCallbacks;
 }
