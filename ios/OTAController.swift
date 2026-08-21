@@ -1,11 +1,11 @@
 import Foundation
 
 /**
- * OTAUpdater — public helper enum.
+ * OTAController — public helper enum.
  * Consumer app isko function-call se use karta hai — koi class inheritance
  * nahi chahiye, isliye kisi bhi doosri base class ke saath conflict nahi hota.
  */
-public enum OTAUpdater {
+public enum OTAController {
 
     /**
      * AppDelegate.swift ke sourceURL(for:) ke andar call karo.

@@ -1,1 +1,1 @@
-{"version":3,"file":"OTARestart.d.ts","sourceRoot":"","sources":["../../src/OTARestart.ts"],"names":[],"mappings":"AAIA,wBAAgB,UAAU,IAAI,IAAI,CAQjC;AAED,wBAAsB,aAAa,IAAI,OAAO,CAAC,MAAM,CAAC,CAMrD;AAED,wBAAsB,wBAAwB,IAAI,OAAO,CAAC,IAAI,CAAC,CAU9D"}
+{"version":3,"file":"OTARestart.d.ts","sourceRoot":"","sources":["../../src/OTARestart.ts"],"names":[],"mappings":"AAoBA,wBAAgB,UAAU,IAAI,IAAI,CAQjC;AAED,wBAAgB,aAAa,IAAI,MAAM,CAWtC;AAED;;;;GAIG;AACH,wBAAgB,aAAa,IAAI,MAAM,CAEtC;AAED,wBAAsB,wBAAwB,IAAI,OAAO,CAAC,IAAI,CAAC,CAU9D"}

@@ -2,20 +2,17 @@ const fs = require('fs');
 const path = require('path');
 
 function getProjectRoot() {
-  // If running from postinstall, INIT_CWD points to the project running npm/yarn install
   const initCwd = process.env.INIT_CWD;
   if (initCwd && fs.existsSync(path.join(initCwd, 'package.json'))) {
-    // Check if INIT_CWD is our own package directory
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(initCwd, 'package.json'), 'utf8'));
-      if (pkg.name === 'react-native-ota-updater' && fs.existsSync(path.join(initCwd, 'src', 'OTAService.ts'))) {
+      if ((pkg.name === 'react-native-ota-controller' || pkg.name === 'react-native-ota-updater') && fs.existsSync(path.join(initCwd, 'src', 'OTAService.ts'))) {
         return null; // Self-development environment, skip
       }
     } catch (_) {}
     return initCwd;
   }
 
-  // Fallback: Check parent directories up from node_modules
   let current = process.cwd();
   if (current.includes('node_modules')) {
     const root = current.split('node_modules')[0];
@@ -24,11 +21,10 @@ function getProjectRoot() {
     }
   }
 
-  // Fallback to process.cwd() if it contains android/ or ios/
   if (fs.existsSync(path.join(current, 'android')) || fs.existsSync(path.join(current, 'ios'))) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(current, 'package.json'), 'utf8'));
-      if (pkg.name === 'react-native-ota-updater' && fs.existsSync(path.join(current, 'src', 'OTAService.ts'))) {
+      if ((pkg.name === 'react-native-ota-controller' || pkg.name === 'react-native-ota-updater') && fs.existsSync(path.join(current, 'src', 'OTAService.ts'))) {
         return null;
       }
     } catch (_) {}
@@ -38,20 +34,26 @@ function getProjectRoot() {
   return null;
 }
 
-function findFilesRecursively(dir, filterRegex, fileList = []) {
-  if (!fs.existsSync(dir)) return fileList;
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name !== 'build' && entry.name !== 'Pods' && entry.name !== '.gradle' && entry.name !== 'node_modules') {
-        findFilesRecursively(fullPath, filterRegex, fileList);
+function findFilesRecursively(dir, pattern, results = []) {
+  if (!fs.existsSync(dir)) return results;
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const fullPath = path.join(dir, file);
+    let stat;
+    try {
+      stat = fs.statSync(fullPath);
+    } catch (_) {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      if (!['build', '.gradle', 'Pods', 'DerivedData', 'node_modules'].includes(file)) {
+        findFilesRecursively(fullPath, pattern, results);
       }
-    } else if (filterRegex.test(entry.name)) {
-      fileList.push(fullPath);
+    } else if (pattern.test(file)) {
+      results.push(fullPath);
     }
   }
-  return fileList;
+  return results;
 }
 
 function setupAndroid(projectRoot) {
@@ -73,16 +75,16 @@ function setupAndroid(projectRoot) {
   const isKotlin = mainAppPath.endsWith('.kt');
   let content = fs.readFileSync(mainAppPath, 'utf8');
 
-  if (content.includes('OTAUpdater.resolveBundlePath')) {
+  if (content.includes('OTAController.resolveBundlePath') || content.includes('OTAUpdater.resolveBundlePath')) {
     return { status: 'already_configured', file: path.relative(projectRoot, mainAppPath) };
   }
 
   // 1. Add import
   const importStatement = isKotlin
-    ? 'import com.otaupdater.OTAUpdater\n'
-    : 'import com.otaupdater.OTAUpdater;\n';
+    ? 'import com.otacontroller.OTAController\n'
+    : 'import com.otacontroller.OTAController;\n';
 
-  if (!content.includes('com.otaupdater.OTAUpdater')) {
+  if (!content.includes('com.otacontroller.OTAController') && !content.includes('com.otaupdater.OTAController') && !content.includes('com.otaupdater.OTAUpdater')) {
     const packageIndex = content.indexOf('package ');
     if (packageIndex !== -1) {
       const endOfLine = content.indexOf('\n', packageIndex);
@@ -94,38 +96,34 @@ function setupAndroid(projectRoot) {
 
   // 2. Inject resolveBundlePath
   if (isKotlin) {
-    // New Architecture (reactHost / getDefaultReactHost)
     if (content.includes('getDefaultReactHost')) {
       if (content.includes('packageList = PackageList(this).packages')) {
         content = content.replace(
           /(packageList\s*=\s*PackageList\(this\)\.packages(?:\.apply\s*\{[\s\S]*?\})?,?)/,
-          `$1\n      jsBundleFilePath = OTAUpdater.resolveBundlePath(applicationContext),`
+          `$1\n      jsBundleFilePath = OTAController.resolveBundlePath(applicationContext),`
         );
       } else if (content.includes('context = applicationContext')) {
         content = content.replace(
           /(context\s*=\s*applicationContext,?)/,
-          `$1\n      jsBundleFilePath = OTAUpdater.resolveBundlePath(applicationContext),`
+          `$1\n      jsBundleFilePath = OTAController.resolveBundlePath(applicationContext),`
         );
       }
-    } 
-    // Legacy Architecture (ReactNativeHost)
-    else if (content.includes('ReactNativeHost(this)') || content.includes('DefaultReactNativeHost(this)')) {
+    } else if (content.includes('ReactNativeHost(this)') || content.includes('DefaultReactNativeHost(this)')) {
       content = content.replace(
         /(object\s*:\s*(?:Default)?ReactNativeHost\(this\)\s*\{)/,
-        `$1\n\n      override fun getJSBundleFile(): String? =\n        OTAUpdater.resolveBundlePath(applicationContext)\n`
+        `$1\n\n      override fun getJSBundleFile(): String? =\n        OTAController.resolveBundlePath(applicationContext)\n`
       );
     }
   } else {
-    // Java - Legacy ReactNativeHost
     if (content.includes('getJSBundleFile()')) {
       content = content.replace(
         /getJSBundleFile\(\)\s*\{[\s\S]*?\}/,
-        `getJSBundleFile() {\n      return OTAUpdater.resolveBundlePath(getApplicationContext());\n    }`
+        `getJSBundleFile() {\n      return OTAController.resolveBundlePath(getApplicationContext());\n    }`
       );
     } else if (content.includes('new ReactNativeHost(this)') || content.includes('new DefaultReactNativeHost(this)')) {
       content = content.replace(
         /(new\s+(?:Default)?ReactNativeHost\(this\)\s*\{)/,
-        `$1\n\n      @Override\n      protected String getJSBundleFile() {\n        return OTAUpdater.resolveBundlePath(getApplicationContext());\n      }\n`
+        `$1\n\n      @Override\n      protected String getJSBundleFile() {\n        return OTAController.resolveBundlePath(getApplicationContext());\n      }\n`
       );
     }
   }
@@ -140,26 +138,23 @@ function setupIOS(projectRoot) {
     return { status: 'skipped', reason: 'ios directory not found' };
   }
 
-  // Check for AppDelegate.swift (Modern React Native)
   const swiftFiles = findFilesRecursively(iosDir, /^AppDelegate\.swift$/);
   if (swiftFiles.length > 0) {
     const appDelegatePath = swiftFiles[0];
     let content = fs.readFileSync(appDelegatePath, 'utf8');
 
-    if (content.includes('OTAUpdater.resolveBundlePath')) {
+    if (content.includes('OTAController.resolveBundlePath') || content.includes('OTAUpdater.resolveBundlePath')) {
       return { status: 'already_configured', file: path.relative(projectRoot, appDelegatePath) };
     }
 
-    // 1. Add import
-    if (!content.includes('import OtaUpdater')) {
-      content = `import OtaUpdater\n` + content;
+    if (!content.includes('import OtaController') && !content.includes('import OtaUpdater')) {
+      content = `import OtaController\n` + content;
     }
 
-    // 2. Inject into bundleURL()
     if (content.includes('bundleURL()')) {
       content = content.replace(
         /(override\s+func\s+bundleURL\(\)\s*->\s*URL\?\s*\{[\s\S]*?#else\s*\n)/,
-        `$1    if let otaURL = OTAUpdater.resolveBundlePath() {\n      return otaURL\n    }\n`
+        `$1    if let otaURL = OTAController.resolveBundlePath() {\n      return otaURL\n    }\n`
       );
     }
 
@@ -167,13 +162,12 @@ function setupIOS(projectRoot) {
     return { status: 'configured', file: path.relative(projectRoot, appDelegatePath) };
   }
 
-  // Check for AppDelegate.mm (Objective-C++)
   const mmFiles = findFilesRecursively(iosDir, /^AppDelegate\.mm$/);
   if (mmFiles.length > 0) {
     const appDelegatePath = mmFiles[0];
     let content = fs.readFileSync(appDelegatePath, 'utf8');
 
-    if (content.includes('OTAUpdater')) {
+    if (content.includes('OTAController') || content.includes('OTAUpdater')) {
       return { status: 'already_configured', file: path.relative(projectRoot, appDelegatePath) };
     }
 
@@ -187,12 +181,50 @@ function setupIOS(projectRoot) {
   return { status: 'skipped', reason: 'AppDelegate file not found' };
 }
 
+function unlinkAndroid(projectRoot) {
+  const androidDir = path.join(projectRoot, 'android');
+  if (!fs.existsSync(androidDir)) return { status: 'skipped' };
+
+  const mainAppFiles = findFilesRecursively(
+    path.join(androidDir, 'app', 'src', 'main', 'java'),
+    /^MainApplication\.(kt|java)$/
+  );
+  if (mainAppFiles.length === 0) return { status: 'skipped' };
+
+  const mainAppPath = mainAppFiles[0];
+  let content = fs.readFileSync(mainAppPath, 'utf8');
+
+  content = content.replace(/import\s+com\.(?:otacontroller|otaupdater)\.(?:OTAController|OTAUpdater);?\n?/g, '');
+  content = content.replace(/\s*jsBundleFilePath\s*=\s*(?:OTAController|OTAUpdater)\.resolveBundlePath\([^)]*\),?/g, '');
+  content = content.replace(/\s*override\s+fun\s+getJSBundleFile\(\):\s*String\?\s*=\s*(?:OTAController|OTAUpdater)\.resolveBundlePath\([^)]*\)/g, '');
+  content = content.replace(/\s*@Override\s+protected\s+String\s+getJSBundleFile\(\)\s*\{\s*return\s+(?:OTAController|OTAUpdater)\.resolveBundlePath\([^)]*\);\s*\}/g, '');
+
+  fs.writeFileSync(mainAppPath, content, 'utf8');
+  return { status: 'unlinked', file: path.relative(projectRoot, mainAppPath) };
+}
+
+function unlinkIOS(projectRoot) {
+  const iosDir = path.join(projectRoot, 'ios');
+  if (!fs.existsSync(iosDir)) return { status: 'skipped' };
+
+  const swiftFiles = findFilesRecursively(iosDir, /^AppDelegate\.swift$/);
+  if (swiftFiles.length > 0) {
+    const appDelegatePath = swiftFiles[0];
+    let content = fs.readFileSync(appDelegatePath, 'utf8');
+
+    content = content.replace(/import\s+(?:OtaController|OtaUpdater)\n?/g, '');
+    content = content.replace(/\s*if\s+let\s+otaURL\s*=\s*(?:OTAController|OTAUpdater)\.resolveBundlePath\(\)\s*\{\s*return\s+otaURL\s*\}/g, '');
+
+    fs.writeFileSync(appDelegatePath, content, 'utf8');
+    return { status: 'unlinked', file: path.relative(projectRoot, appDelegatePath) };
+  }
+
+  return { status: 'skipped' };
+}
+
 function runSetup() {
   const projectRoot = getProjectRoot();
-  if (!projectRoot) {
-    // Running in own package repo or invalid root, skip silently
-    return;
-  }
+  if (!projectRoot) return;
 
   console.log('\n📦 [react-native-ota-controller] Configuring native bundle loaders...');
 
@@ -223,8 +255,35 @@ function runSetup() {
   }
 }
 
-module.exports = { runSetup, setupAndroid, setupIOS, getProjectRoot };
+function runUnlink() {
+  const projectRoot = getProjectRoot();
+  if (!projectRoot) return;
+
+  console.log('\n🧹 [react-native-ota-controller] Removing native bundle loaders...');
+
+  try {
+    const androidResult = unlinkAndroid(projectRoot);
+    if (androidResult.status === 'unlinked') {
+      console.log(`  ✅ Android: Unlinked from ${androidResult.file}`);
+    }
+
+    const iosResult = unlinkIOS(projectRoot);
+    if (iosResult.status === 'unlinked') {
+      console.log(`  ✅ iOS: Unlinked from ${iosResult.file}`);
+    }
+
+    console.log('✨ [react-native-ota-controller] Unlink complete!\n');
+  } catch (err) {
+    console.warn('⚠️  [react-native-ota-controller] Unlink failed:', err.message);
+  }
+}
+
+module.exports = { runSetup, runUnlink, setupAndroid, setupIOS, unlinkAndroid, unlinkIOS, getProjectRoot };
 
 if (require.main === module) {
-  runSetup();
+  if (process.argv.includes('unlink') || process.argv.includes('--unlink')) {
+    runUnlink();
+  } else {
+    runSetup();
+  }
 }

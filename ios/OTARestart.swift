@@ -2,44 +2,56 @@ import Foundation
 import React
 
 @objc(OTARestart)
-class OTARestart: NSObject {
+class OTARestart: NSObject, RCTBridgeModule {
 
-  @objc
-  static func requiresMainQueueSetup() -> Bool {
-    return true
-  }
-
-  // iOS App Store guidelines process ko forcefully kill/relaunch karne ki ijazat nahi dete
-  // (Android jaisa Process.killProcess yahan use nahi kar sakte).
-  // Sahi tareeqa: JS bundle ko in-place reload karna, jaise dev mode me "Reload" button.
-  @objc
-  func restart() {
-    DispatchQueue.main.async {
-      RCTTriggerReloadCommandListeners("OTA update applied")
+    static func moduleName() -> String! {
+        return "OTARestart"
     }
-  }
 
-  // App Store wala current app version (e.g. "2.4.0") return karta hai
-  @objc
-  func getAppVersion(
-    _ resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
-  ) {
-    if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-      resolve(version)
-    } else {
-      reject("OTA_VERSION_ERROR", "Could not read app version", nil)
+    static func requiresMainQueueSetup() -> Bool {
+        return true
     }
-  }
 
-  // App safely launch ho gayi — native boot-attempt counter reset karo.
-  // JS side OTAService.reportBootSuccess() isko call karta hai.
-  @objc
-  func confirmBoot(
-    _ resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
-  ) {
-    OTABundleLoader.resetBootAttempt()
-    resolve(true)
-  }
+    override init() {
+        super.init()
+        // JS engine booted successfully -> reset crash rollback counter automatically
+        OTABundleLoader.resetBootAttempt()
+    }
+
+    @objc
+    func constantsToExport() -> [AnyHashable: Any]! {
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let otaVersion = OTABundleLoader.getLoadedOtaVersion()
+        return [
+            "appVersion": appVersion,
+            "otaVersion": otaVersion
+        ]
+    }
+
+    @objc
+    func restart() {
+        DispatchQueue.main.async {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let window = windowScene.windows.first else {
+                exit(0)
+            }
+            exit(0)
+        }
+    }
+
+    @objc
+    func getAppVersion() -> String {
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+    }
+
+    @objc
+    func getOtaVersion() -> NSNumber {
+        return NSNumber(value: OTABundleLoader.getLoadedOtaVersion())
+    }
+
+    @objc
+    func confirmBoot(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        OTABundleLoader.resetBootAttempt()
+        resolve(true)
+    }
 }

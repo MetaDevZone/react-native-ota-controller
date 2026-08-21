@@ -1,4 +1,4 @@
-package com.otaupdater
+package com.otacontroller
 
 import android.content.Context
 import org.json.JSONObject
@@ -16,16 +16,27 @@ object OTABundleLoader {
     private const val KEY_BOOT_ATTEMPT = "ota_boot_attempt"
     private const val MAX_BOOT_ATTEMPTS = 2
 
+    // Boot ke waqt jo bundle load hua uska version track karta hai
+    private var loadedOtaVersion: Int = 0
+
     fun getActiveBundlePath(context: Context): String? {
         return try {
             val otaRoot = File(context.filesDir, OTA_ROOT_DIR)
             val currentFile = File(otaRoot, CURRENT_FILE)
-            if (!currentFile.exists()) return null
+            if (!currentFile.exists()) {
+                loadedOtaVersion = 0
+                return null
+            }
 
             val json = JSONObject(currentFile.readText())
             val activeBundlePath = json.optString("activeBundlePath", "")
             val builtForNativeVersion = json.optString("builtForNativeVersion", "")
-            if (activeBundlePath.isEmpty()) return null
+            val activeVersion = json.optInt("activeVersion", 0)
+
+            if (activeBundlePath.isEmpty()) {
+                loadedOtaVersion = 0
+                return null
+            }
 
             val currentNativeVersion = getCurrentNativeVersion(context)
 
@@ -33,31 +44,66 @@ object OTABundleLoader {
             if (builtForNativeVersion.isNotEmpty() && builtForNativeVersion != currentNativeVersion) {
                 otaRoot.deleteRecursively() // stale bundles + current.json sab clear
                 resetBootAttempt(context)
+                loadedOtaVersion = 0
                 return null // fallback -> naye APK ki apni baked-in bundle load hogi
             }
 
             val bundleFile = File(activeBundlePath)
-            if (!bundleFile.exists()) return null
+            if (!bundleFile.exists()) {
+                loadedOtaVersion = 0
+                return null
+            }
 
             // ─── Native-level crash-rollback guard ───────────────────────────
-            // JS engine start hone se PEHLE chalta hai, isliye JS crash ho ya
-            // native crash — dono cases mein detect ho jayega.
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val attempt = prefs.getInt(KEY_BOOT_ATTEMPT, 0) + 1
 
             if (attempt >= MAX_BOOT_ATTEMPTS) {
-                // Pichli baar(on) reportBootSuccess() kabhi nahi aaya -> crash-loop hai
                 otaRoot.deleteRecursively()
                 resetBootAttempt(context)
-                return null // fallback -> APK ki baked-in bundle load hogi
+                loadedOtaVersion = 0
+                return null
             }
 
             prefs.edit().putInt(KEY_BOOT_ATTEMPT, attempt).apply()
 
+            // Successfully active bundle load hui -> is session ka version set karo
+            loadedOtaVersion = activeVersion
+
             activeBundlePath
         } catch (e: Exception) {
-            // current.json corrupt ya missing hui -> APK ki bundled JS load hogi
+            loadedOtaVersion = 0
             null
+        }
+    }
+
+    /**
+     * Current running session me jo bundle actually load hui hai uska version return karta hai.
+     */
+    fun getLoadedOtaVersion(): Int {
+        return loadedOtaVersion
+    }
+
+    /**
+     * Storage me jo activeVersion likha hai wo return karta hai.
+     */
+    fun getActiveOtaVersion(context: Context): Int {
+        return try {
+            val otaRoot = File(context.filesDir, OTA_ROOT_DIR)
+            val currentFile = File(otaRoot, CURRENT_FILE)
+            if (!currentFile.exists()) return 0
+
+            val json = JSONObject(currentFile.readText())
+            val builtForNativeVersion = json.optString("builtForNativeVersion", "")
+            val currentNativeVersion = getCurrentNativeVersion(context)
+
+            if (builtForNativeVersion.isNotEmpty() && builtForNativeVersion != currentNativeVersion) {
+                return 0
+            }
+
+            json.optInt("activeVersion", 0)
+        } catch (e: Exception) {
+            0
         }
     }
 

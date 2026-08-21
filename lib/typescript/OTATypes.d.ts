@@ -14,10 +14,17 @@ export interface OTAProgressPayload {
     status: 'idle' | 'checking' | 'downloading' | 'downloaded' | 'installed' | 'failed';
 }
 export type OTAProgressCallback = (payload: OTAProgressPayload) => void;
+export type OTAErrorCode = 'DOWNLOAD_FAILED' | 'EXTRACTION_FAILED' | 'INVALID_META' | 'APP_VERSION_MISMATCH' | 'ALREADY_IN_PROGRESS' | 'STORAGE_ERROR' | 'UNKNOWN_ERROR';
+export interface OTAErrorPayload {
+    code: OTAErrorCode;
+    message: string;
+    originalError?: any;
+}
+export type OTAErrorCallback = (error: OTAErrorPayload) => void;
 export interface OTADownloadOptions {
-    downloadUrl: string;
-    bundleVersion?: number;
+    url: string;
     autoRestart?: boolean;
-    onProgress: OTAProgressCallback;
+    onProgress?: OTAProgressCallback;
+    onError?: OTAErrorCallback;
 }
 //# sourceMappingURL=OTATypes.d.ts.map

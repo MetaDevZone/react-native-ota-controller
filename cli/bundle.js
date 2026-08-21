@@ -17,17 +17,21 @@ if (!['android', 'ios', 'all'].includes(platformArg)) {
   process.exit(1);
 }
 
-function parseIntFlag(flag) {
-  const idx = process.argv.indexOf(flag);
-  if (idx === -1) return undefined;
-  const raw = process.argv[idx + 1];
-  const num = parseInt(raw, 10);
-  return Number.isFinite(num) ? num : undefined;
+function parseIntFlag(...flags) {
+  for (const flag of flags) {
+    const idx = process.argv.indexOf(flag);
+    if (idx !== -1) {
+      const raw = process.argv[idx + 1];
+      const num = parseInt(raw, 10);
+      if (Number.isFinite(num)) return num;
+    }
+  }
+  return undefined;
 }
 
-const cliGenericOtaVersion = parseIntFlag('--ota-version');
-const cliAndroidOtaVersion = parseIntFlag('--android-ota-version') ?? cliGenericOtaVersion;
-const cliIosOtaVersion     = parseIntFlag('--ios-ota-version') ?? cliGenericOtaVersion;
+const cliGenericOtaVersion = parseIntFlag('--ota-version', '--version', '-v');
+const cliAndroidOtaVersion = parseIntFlag('--android-ota-version', '--android-version') ?? cliGenericOtaVersion;
+const cliIosOtaVersion     = parseIntFlag('--ios-ota-version', '--ios-version') ?? cliGenericOtaVersion;
 
 function detectAndroidVersion() {
   const gradlePath = path.join(process.cwd(), 'android', 'app', 'build.gradle');
@@ -181,19 +185,22 @@ async function bundleAndroid(appVersion, otaVersion) {
 
   writeMeta(workDir, appVersion, otaVersion);
 
-  const zipPath = path.join(OUT_DIR, 'bundle-android.zip');
-  fs.rmSync(zipPath, { force: true });
-  await zipDirectory(workDir, zipPath);
+  const versionedName = `bundle-android(${appVersion}-${otaVersion}).zip`;
+  const versionedZipPath = path.join(OUT_DIR, versionedName);
+
+  fs.rmSync(versionedZipPath, { force: true });
+
+  await zipDirectory(workDir, versionedZipPath);
   fs.rmSync(workDir, { recursive: true, force: true });
 
   updateTrackedOtaVersion('android', appVersion, otaVersion);
 
-  const size = fs.existsSync(zipPath) ? formatFileSize(fs.statSync(zipPath).size) : 'N/A';
+  const size = fs.existsSync(versionedZipPath) ? formatFileSize(fs.statSync(versionedZipPath).size) : 'N/A';
   return {
     platform: 'Android 🤖',
     appVersion,
     otaVersion,
-    zipFile: 'ota-dist/bundle-android.zip',
+    zipFile: `ota-dist/${versionedName}`,
     fileSize: size,
   };
 }
@@ -214,19 +221,22 @@ async function bundleIOS(appVersion, otaVersion) {
 
   writeMeta(workDir, appVersion, otaVersion);
 
-  const zipPath = path.join(OUT_DIR, 'bundle-ios.zip');
-  fs.rmSync(zipPath, { force: true });
-  await zipDirectory(workDir, zipPath);
+  const versionedName = `bundle-ios(${appVersion}-${otaVersion}).zip`;
+  const versionedZipPath = path.join(OUT_DIR, versionedName);
+
+  fs.rmSync(versionedZipPath, { force: true });
+
+  await zipDirectory(workDir, versionedZipPath);
   fs.rmSync(workDir, { recursive: true, force: true });
 
   updateTrackedOtaVersion('ios', appVersion, otaVersion);
 
-  const size = fs.existsSync(zipPath) ? formatFileSize(fs.statSync(zipPath).size) : 'N/A';
+  const size = fs.existsSync(versionedZipPath) ? formatFileSize(fs.statSync(versionedZipPath).size) : 'N/A';
   return {
     platform: 'iOS 🍏',
     appVersion,
     otaVersion,
-    zipFile: 'ota-dist/bundle-ios.zip',
+    zipFile: `ota-dist/${versionedName}`,
     fileSize: size,
   };
 }

@@ -9366,9 +9366,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-ota-updater@workspace:.":
+"react-native-ota-controller@workspace:.":
   version: 0.0.0-use.local
-  resolution: "react-native-ota-updater@workspace:."
+  resolution: "react-native-ota-controller@workspace:."
   dependencies:
     "@commitlint/config-conventional": "npm:^21.0.2"
     "@eslint/compat": "npm:^2.1.0"

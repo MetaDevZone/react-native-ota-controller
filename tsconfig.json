@@ -11,7 +11,7 @@
     "ignoreDeprecations": "6.0",
     "noEmit": true,
     "paths": {
-      "react-native-ota-updater": ["./src/index"]
+      "react-native-ota-controller": ["./src/index"]
     }
   },
   "include": ["src/**/*"]

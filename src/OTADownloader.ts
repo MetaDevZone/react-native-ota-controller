@@ -117,13 +117,10 @@ class OTADownloaderClass {
 
   async downloadBundle(
     url: string,
-    onProgress: OTAProgressCallback,
-    version?: number
+    onProgress: OTAProgressCallback
   ): Promise<string> {
     await this.ensureDownloadDir();
-    const destPath = version !== undefined
-      ? `${OTA_DOWNLOAD_DIR}/bundle${version}.zip`
-      : `${OTA_DOWNLOAD_DIR}/update.zip`;
+    const destPath = `${OTA_DOWNLOAD_DIR}/update.zip`;
 
     await downloadWithRetry(url, destPath, onProgress);
 

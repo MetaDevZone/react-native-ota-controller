@@ -1,4 +1,4 @@
-package com.otaupdater
+package com.otacontroller
 
 import android.content.Intent
 import android.os.Process
@@ -13,6 +13,30 @@ class OTARestartModule(reactContext: ReactApplicationContext) :
 
     override fun getName() = "OTARestart"
 
+    override fun initialize() {
+        super.initialize()
+        // JS context successfully created -> reset crash-rollback counter automatically
+        try {
+            OTABundleLoader.resetBootAttempt(reactApplicationContext)
+        } catch (_: Exception) {}
+    }
+
+    override fun getConstants(): Map<String, Any?> {
+        val context = reactApplicationContext
+        val versionName = try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            pInfo.versionName ?: "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+        // Current loaded bundle ka version return karega
+        val otaVersion = OTABundleLoader.getLoadedOtaVersion()
+        return mapOf(
+            "appVersion" to versionName,
+            "otaVersion" to otaVersion
+        )
+    }
+
     @ReactMethod
     fun restart() {
         val context = reactApplicationContext
@@ -23,20 +47,22 @@ class OTARestartModule(reactContext: ReactApplicationContext) :
         exitProcess(0)
     }
 
-    // Play Store wala current app version (e.g. "2.4.0") return karta hai
-    @ReactMethod
-    fun getAppVersion(promise: Promise) {
-        try {
+    @ReactMethod(isBlockingSynchronousMethod = true)
+    fun getAppVersion(): String {
+        return try {
             val context = reactApplicationContext
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            promise.resolve(pInfo.versionName)
+            pInfo.versionName ?: "unknown"
         } catch (e: Exception) {
-            promise.reject("OTA_VERSION_ERROR", e)
+            "unknown"
         }
     }
 
-    // App safely launch ho gayi — native boot-attempt counter reset karo.
-    // JS side OTAService.reportBootSuccess() isko call karta hai.
+    @ReactMethod(isBlockingSynchronousMethod = true)
+    fun getOtaVersion(): Int {
+        return OTABundleLoader.getLoadedOtaVersion()
+    }
+
     @ReactMethod
     fun confirmBoot(promise: Promise) {
         try {

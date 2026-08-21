@@ -1,15 +1,15 @@
-package com.otaupdater
+package com.otacontroller
 
 import android.content.Context
 import com.facebook.react.ReactPackage
 
 /**
- * OTAUpdater — public helper object.
+ * OTAController — public helper object.
  * Consumer app isko function-call se use karta hai — koi class inheritance
  * nahi chahiye, isliye kisi bhi doosri base class (Firebase, custom SDKs, etc.)
  * ke saath conflict nahi hota.
  */
-object OTAUpdater {
+object OTAController {
 
     /**
      * MainApplication.kt ke getJSBundleFile() ke andar call karo.

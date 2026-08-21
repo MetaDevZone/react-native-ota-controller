@@ -1,1 +1,60 @@
-node_modules
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Compilation & Build outputs
+lib/
+ota-dist/
+build/
+dist/
+
+# Android build & caches
+android/build/
+android/.gradle/
+android/app/build/
+*.aar
+*.apk
+*.aab
+local.properties
+
+# iOS build & pods
+ios/build/
+ios/Pods/
+ios/DerivedData/
+*.xcworkspace
+!default.xcworkspace
+*.xcuserdatad
+xcuserdata/
+
+# Example app artifacts
+example/node_modules/
+example/android/build/
+example/android/app/build/
+example/android/.gradle/
+example/ios/build/
+example/ios/Pods/
+example/lib/
+
+# Local testing & yalc
+.yalc/
+yalc.lock
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# System & IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+.staging/

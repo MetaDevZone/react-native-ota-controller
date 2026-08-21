@@ -1,8 +1,8 @@
 export * from './OTATypes';
 export { OTADownloader } from './OTADownloader';
 export { OTAStorage } from './OTAStorage';
-export { OTAService } from './OTAService';
-export { restartApp, getAppVersion } from './OTARestart';
-export { OTAUpdater } from './OTAUpdater';
-export type { OTAUpdaterProps, OTAUpdaterCallbacks, OTAUpdaterProgressPayload } from './OTAUpdater';
+export { OTAService, OTAError } from './OTAService';
+export { restartApp, getAppVersion, getOtaVersion, getOtaVersion as getActiveVersion } from './OTARestart';
+export { OTAController } from './OTAController';
+export type { OTAControllerProps, OTAControllerCallbacks, OTAControllerProgressPayload, } from './OTAController';
 //# sourceMappingURL=index.d.ts.map

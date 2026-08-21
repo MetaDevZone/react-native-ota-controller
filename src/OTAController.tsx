@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { OTAService } from './OTAService';
-import type { OTAProgressPayload } from './OTATypes';
+import type { OTAErrorPayload, OTAProgressPayload } from './OTATypes';
 
-export interface OTAUpdaterProgressPayload {
+export interface OTAControllerProgressPayload {
   downloaded: number;
   fullSize: number;
   percentage: number;
@@ -10,19 +10,19 @@ export interface OTAUpdaterProgressPayload {
   totalMB: string;
 }
 
-export interface OTAUpdaterCallbacks {
-  onProgress?: (payload: OTAUpdaterProgressPayload) => void;
+export interface OTAControllerCallbacks {
+  onProgress?: (payload: OTAControllerProgressPayload) => void;
   onStateChange?: (state: OTAProgressPayload['status']) => void;
-  onError?: (error: Error) => void;
+  onError?: (error: OTAErrorPayload) => void;
 }
 
-export interface OTAUpdaterProps {
+export interface OTAControllerProps {
   url: string;
   autoRestart?: boolean;
-  callbacks?: OTAUpdaterCallbacks;
+  callbacks?: OTAControllerCallbacks;
 }
 
-export function OTAUpdater(props: OTAUpdaterProps): null {
+export function OTAController(props: OTAControllerProps): null {
   const {
     url,
     autoRestart,
@@ -55,15 +55,21 @@ export function OTAUpdater(props: OTAUpdaterProps): null {
       try {
         await OTAService.reportBootSuccess();
 
-        if (cancelledRef.current) return;
-
         mountCallbacks?.onStateChange?.('checking');
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        if (cancelledRef.current) return;
 
         started = true;
 
         await OTAService.downloadAndApplyUpdate({
-          downloadUrl: mountUrl,
+          url: mountUrl,
           autoRestart: mountAutoRestart,
+          onError: (errorPayload: OTAErrorPayload) => {
+            if (cancelledRef.current) return;
+            console.warn(`OTAController Error [${errorPayload.code}]:`, errorPayload.message);
+            mountCallbacks?.onError?.(errorPayload);
+          },
           onProgress: (payload: OTAProgressPayload) => {
             if (cancelledRef.current) return;
 
@@ -79,14 +85,7 @@ export function OTAUpdater(props: OTAUpdaterProps): null {
           },
         });
       } catch (err: any) {
-        if (cancelledRef.current) return;
-
-        const error: Error =
-          err instanceof Error ? err : new Error(String(err?.message ?? err));
-
-        console.warn('OTAUpdater: error =>', error.message);
-
-        mountCallbacks?.onError?.(error);
+        // Error handling already forwarded to onError callback
       }
     })();
 

@@ -2,6 +2,22 @@ import { NativeModules } from 'react-native';
 
 const { OTARestart } = NativeModules;
 
+const constants = OTARestart?.getConstants?.() ?? OTARestart;
+
+// Current running session me jo bundle loaded hai, uska version JS boot time par freeze ho jata hai
+const sessionLoadedOtaVersion: number = (() => {
+  if (typeof OTARestart?.getOtaVersion === 'function') {
+    try {
+      const ver = OTARestart.getOtaVersion();
+      if (typeof ver === 'number') return ver;
+    } catch {}
+  }
+  if (constants?.otaVersion !== undefined && Number.isFinite(Number(constants.otaVersion))) {
+    return Number(constants.otaVersion);
+  }
+  return 0;
+})();
+
 export function restartApp(): void {
   if (OTARestart?.restart) {
     OTARestart.restart();
@@ -12,12 +28,26 @@ export function restartApp(): void {
   }
 }
 
-export async function getAppVersion(): Promise<string> {
-  if (OTARestart?.getAppVersion) {
-    return OTARestart.getAppVersion();
+export function getAppVersion(): string {
+  if (typeof OTARestart?.getAppVersion === 'function') {
+    try {
+      const ver = OTARestart.getAppVersion();
+      if (typeof ver === 'string') return ver;
+    } catch {}
   }
-  console.warn('OTARestart.getAppVersion not linked');
+  if (constants?.appVersion) {
+    return String(constants.appVersion);
+  }
   return 'unknown';
+}
+
+/**
+ * Returns the OTA bundle version currently running in the active session.
+ * e.g. If bundle 1 is running and bundle 2 downloads silently in background,
+ * getOtaVersion() will continue to return 1 until the app restarts.
+ */
+export function getOtaVersion(): number {
+  return sessionLoadedOtaVersion;
 }
 
 export async function confirmNativeBootSuccess(): Promise<void> {

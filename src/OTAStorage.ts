@@ -134,6 +134,25 @@ class OTAStorageClass {
     }
   }
 
+  async cleanupStaleBundles(keepVersion: number): Promise<void> {
+    try {
+      const exists = await RNFS.exists(OTA_BUNDLES_DIR);
+      if (!exists) return;
+      const items = await RNFS.readDir(OTA_BUNDLES_DIR);
+      for (const item of items) {
+        if (item.isDirectory() && item.name.startsWith('bundle')) {
+          const verStr = item.name.replace('bundle', '');
+          const verNum = parseInt(verStr, 10);
+          if (Number.isFinite(verNum) && verNum !== keepVersion) {
+            await RNFS.unlink(item.path);
+          }
+        }
+      }
+    } catch {
+      // Ignore background cleanup error
+    }
+  }
+
   async clearAll(): Promise<void> {
     const exists = await RNFS.exists(OTA_ROOT_DIR);
     if (exists) {

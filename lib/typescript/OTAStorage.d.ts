@@ -14,6 +14,7 @@ declare class OTAStorageClass {
     readCurrent(): Promise<OTACurrentInfo | null>;
     writeCurrent(info: OTACurrentInfo): Promise<void>;
     deleteBundleVersion(version: number): Promise<void>;
+    cleanupStaleBundles(keepVersion: number): Promise<void>;
     clearAll(): Promise<void>;
     readBundleMeta(bundleDir: string): Promise<BundleMeta | null>;
 }
