@@ -41,6 +41,24 @@ function detectAndroidVersion() {
   return match ? match[1] : null;
 }
 
+function detectAndroidAppId() {
+  const gradlePath = path.join(process.cwd(), 'android', 'app', 'build.gradle');
+  if (fs.existsSync(gradlePath)) {
+    const content = fs.readFileSync(gradlePath, 'utf8');
+    const appMatch = content.match(/applicationId\s+["']?([^"'\s\n]+)["']?/);
+    if (appMatch && appMatch[1]) return appMatch[1];
+    const namespaceMatch = content.match(/namespace\s+["']?([^"'\s\n]+)["']?/);
+    if (namespaceMatch && namespaceMatch[1]) return namespaceMatch[1];
+  }
+  const manifestPath = path.join(process.cwd(), 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
+  if (fs.existsSync(manifestPath)) {
+    const content = fs.readFileSync(manifestPath, 'utf8');
+    const pkgMatch = content.match(/package\s*=\s*["']([^"']+)["']/);
+    if (pkgMatch && pkgMatch[1]) return pkgMatch[1];
+  }
+  return null;
+}
+
 function detectIOSVersionFromPbxproj(iosDir) {
   const entries = fs.readdirSync(iosDir);
   for (const entry of entries) {
@@ -56,6 +74,61 @@ function detectIOSVersionFromPbxproj(iosDir) {
       }
     }
   }
+  return null;
+}
+
+function detectIOSBundleIdFromPbxproj(iosDir) {
+  const entries = fs.readdirSync(iosDir);
+  for (const entry of entries) {
+    if (entry.endsWith('.xcodeproj')) {
+      const pbxPath = path.join(iosDir, entry, 'project.pbxproj');
+      if (fs.existsSync(pbxPath)) {
+        const content = fs.readFileSync(pbxPath, 'utf8');
+        const matches = content.matchAll(/PRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^;]+);/g);
+        for (const match of matches) {
+          const id = match[1].trim().replace(/^["']|["']$/g, '');
+          if (id && !id.includes('$(') && !id.endsWith('Tests') && !id.endsWith('UITests')) {
+            return id;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function detectIOSBundleId() {
+  const iosDir = path.join(process.cwd(), 'ios');
+  if (!fs.existsSync(iosDir)) return null;
+
+  // 1. Try resolving from Xcode project file
+  const pbxId = detectIOSBundleIdFromPbxproj(iosDir);
+  if (pbxId) return pbxId;
+
+  // 2. Try Info.plist
+  const entries = fs.readdirSync(iosDir);
+  for (const entry of entries) {
+    const plistPath = path.join(iosDir, entry, 'Info.plist');
+    if (fs.existsSync(plistPath)) {
+      try {
+        const result = execSync(
+          `plutil -extract CFBundleIdentifier raw "${plistPath}"`,
+          { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+        ).trim();
+        if (result && !result.includes('$(')) return result;
+      } catch {}
+    }
+  }
+
+  // 3. Try app.json
+  const appJsonPath = path.join(process.cwd(), 'app.json');
+  if (fs.existsSync(appJsonPath)) {
+    try {
+      const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
+      if (appJson.expo?.ios?.bundleIdentifier) return appJson.expo.ios.bundleIdentifier;
+    } catch {}
+  }
+
   return null;
 }
 
@@ -145,13 +218,31 @@ function updateTrackedOtaVersion(platform, appVersion, otaVersion) {
 const OUT_DIR = path.join(process.cwd(), 'ota-dist');
 if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
 
+function ensureGitignore() {
+  try {
+    const gitignorePath = path.join(process.cwd(), '.gitignore');
+    let content = '';
+    if (fs.existsSync(gitignorePath)) {
+      content = fs.readFileSync(gitignorePath, 'utf8');
+    }
+    const entries = [];
+    if (!content.includes('ota-dist')) entries.push('ota-dist/');
+    if (entries.length > 0) {
+      const sep = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+      fs.appendFileSync(gitignorePath, `${sep}\n# React Native OTA Controller\n${entries.join('\n')}\n`, 'utf8');
+    }
+  } catch {}
+}
+ensureGitignore();
+
 function run(cmd) {
   console.log(`\n> ${cmd}\n`);
   execSync(cmd, { stdio: 'inherit' });
 }
 
-function writeMeta(workDir, appVersion, otaVersion) {
+function writeMeta(workDir, appVersion, otaVersion, appId) {
   const meta = {
+    ...(appId ? { appId } : {}),
     appVersion,
     otaVersion,
     builtAt: new Date().toISOString(),
@@ -169,8 +260,8 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-async function bundleAndroid(appVersion, otaVersion) {
-  console.log(`\n📦 Building Android bundle | appVersion: ${appVersion} | otaVersion: ${otaVersion}\n`);
+async function bundleAndroid(appVersion, otaVersion, appId) {
+  console.log(`\n📦 Building Android bundle | appId: ${appId ?? 'auto'} | appVersion: ${appVersion} | otaVersion: ${otaVersion}\n`);
 
   const workDir = path.join(OUT_DIR, '.android-tmp');
   fs.rmSync(workDir, { recursive: true, force: true });
@@ -183,7 +274,7 @@ async function bundleAndroid(appVersion, otaVersion) {
     `--assets-dest ${workDir}`
   );
 
-  writeMeta(workDir, appVersion, otaVersion);
+  writeMeta(workDir, appVersion, otaVersion, appId);
 
   const versionedName = `bundle-android(${appVersion}-${otaVersion}).zip`;
   const versionedZipPath = path.join(OUT_DIR, versionedName);
@@ -198,6 +289,7 @@ async function bundleAndroid(appVersion, otaVersion) {
   const size = fs.existsSync(versionedZipPath) ? formatFileSize(fs.statSync(versionedZipPath).size) : 'N/A';
   return {
     platform: 'Android 🤖',
+    appId: appId || 'N/A',
     appVersion,
     otaVersion,
     zipFile: `ota-dist/${versionedName}`,
@@ -205,8 +297,8 @@ async function bundleAndroid(appVersion, otaVersion) {
   };
 }
 
-async function bundleIOS(appVersion, otaVersion) {
-  console.log(`\n📦 Building iOS bundle | appVersion: ${appVersion} | otaVersion: ${otaVersion}\n`);
+async function bundleIOS(appVersion, otaVersion, appId) {
+  console.log(`\n📦 Building iOS bundle | appId: ${appId ?? 'auto'} | appVersion: ${appVersion} | otaVersion: ${otaVersion}\n`);
 
   const workDir = path.join(OUT_DIR, '.ios-tmp');
   fs.rmSync(workDir, { recursive: true, force: true });
@@ -219,7 +311,7 @@ async function bundleIOS(appVersion, otaVersion) {
     `--assets-dest ${workDir}`
   );
 
-  writeMeta(workDir, appVersion, otaVersion);
+  writeMeta(workDir, appVersion, otaVersion, appId);
 
   const versionedName = `bundle-ios(${appVersion}-${otaVersion}).zip`;
   const versionedZipPath = path.join(OUT_DIR, versionedName);
@@ -234,6 +326,7 @@ async function bundleIOS(appVersion, otaVersion) {
   const size = fs.existsSync(versionedZipPath) ? formatFileSize(fs.statSync(versionedZipPath).size) : 'N/A';
   return {
     platform: 'iOS 🍏',
+    appId: appId || 'N/A',
     appVersion,
     otaVersion,
     zipFile: `ota-dist/${versionedName}`,
@@ -262,6 +355,9 @@ function printSummary(results) {
 
   for (const item of results) {
     console.log(`\n  ${item.platform}`);
+    if (item.appId && item.appId !== 'N/A') {
+      console.log(`    • App ID / Package   : ${item.appId}`);
+    }
     console.log(`    • Native App Version : ${item.appVersion}`);
     console.log(`    • OTA Bundle Version : ${item.otaVersion}`);
     console.log(`    • Bundle File Size   : ${item.fileSize}`);
@@ -276,24 +372,28 @@ function printSummary(results) {
   const results = [];
 
   if (platformArg === 'android') {
+    const appId = detectAndroidAppId();
     const appVersion = detectAndroidVersion() ?? 'unknown';
     const otaVersion = computeOtaVersion('android', appVersion, cliAndroidOtaVersion);
-    const res = await bundleAndroid(appVersion, otaVersion);
+    const res = await bundleAndroid(appVersion, otaVersion, appId);
     results.push(res);
   } else if (platformArg === 'ios') {
+    const appId = detectIOSBundleId();
     const appVersion = detectIOSVersion() ?? 'unknown';
     const otaVersion = computeOtaVersion('ios', appVersion, cliIosOtaVersion);
-    const res = await bundleIOS(appVersion, otaVersion);
+    const res = await bundleIOS(appVersion, otaVersion, appId);
     results.push(res);
   } else {
+    const androidAppId   = detectAndroidAppId();
     const androidVersion = detectAndroidVersion() ?? 'unknown';
     const androidOtaVer  = computeOtaVersion('android', androidVersion, cliAndroidOtaVersion);
 
+    const iosAppId       = detectIOSBundleId();
     const iosVersion     = detectIOSVersion() ?? 'unknown';
     const iosOtaVer      = computeOtaVersion('ios', iosVersion, cliIosOtaVersion);
 
-    const androidRes = await bundleAndroid(androidVersion, androidOtaVer);
-    const iosRes     = await bundleIOS(iosVersion, iosOtaVer);
+    const androidRes = await bundleAndroid(androidVersion, androidOtaVer, androidAppId);
+    const iosRes     = await bundleIOS(iosVersion, iosOtaVer, iosAppId);
     results.push(androidRes, iosRes);
   }
 

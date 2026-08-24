@@ -1,6 +1,6 @@
 {
   "name": "react-native-ota-controller",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Native module for handling OTA JS bundle updates in React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/index.d.ts",

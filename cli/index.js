@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+const { setupGitignore, getProjectRoot } = require('./setup.js');
+
+try {
+  const root = getProjectRoot();
+  if (root) setupGitignore(root);
+} catch (_) {}
+
 let args = process.argv.slice(2);
 
 // Handle "build" or "bundle" subcommands (e.g. npx ota build android)

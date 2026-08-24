@@ -10,7 +10,7 @@ import type {
   OTAProgressPayload,
 } from './OTATypes';
 import { OTA_BUNDLE_FILE_NAME, OTA_BUNDLE_FILE_NAME_IOS } from './OTAConstants';
-import { confirmNativeBootSuccess, getAppVersion, getOtaVersion, restartApp } from './OTARestart';
+import { confirmNativeBootSuccess, getAppId, getAppVersion, getOtaVersion, restartApp } from './OTARestart';
 
 const MAX_BOOT_FAIL_COUNT = 2;
 
@@ -50,6 +50,19 @@ class OTAServiceClass {
       const err = new OTAError(
         'DOWNLOAD_FAILED',
         'OTA: No download URL provided in options'
+      );
+      onError?.(err.toPayload());
+      throw err;
+    }
+
+    const nativeVersion = getAppVersion();
+    const nativeAppId = getAppId();
+
+    const rejectedInfo = await OTAStorage.getRejectedUrlInfo(url, nativeVersion);
+    if (rejectedInfo) {
+      const err = new OTAError(
+        'UPDATE_BLACKLISTED',
+        `OTA: Skipping update — bundle URL was previously rejected (${rejectedInfo.reason})`
       );
       onError?.(err.toPayload());
       throw err;
@@ -112,12 +125,20 @@ class OTAServiceClass {
       }
 
       const meta: BundleMeta | null = await OTAStorage.readBundleMeta(stagingDir);
-      const nativeVersion = getAppVersion();
 
       if (meta === null) {
         throw new OTAError(
           'INVALID_META',
           'OTA: Bundle is corrupt or missing meta.json manifest'
+        );
+      }
+
+      if (!meta.appId || (nativeAppId && meta.appId !== nativeAppId)) {
+        throw new OTAError(
+          'APP_ID_MISMATCH',
+          meta.appId
+            ? `OTA: App ID mismatch — bundle is built for ${meta.appId}, but device is running ${nativeAppId}`
+            : `OTA: App ID missing in bundle — bundles must be built with a valid appId matching ${nativeAppId}`
         );
       }
 
@@ -163,6 +184,8 @@ class OTAServiceClass {
 
       try {
         await OTAStorage.writeCurrent(newCurrent);
+        // Successful OTA update applied -> reset rejected URLs list
+        await OTAStorage.clearRejectedUpdates();
       } catch (err: any) {
         throw new OTAError(
           'STORAGE_ERROR',
@@ -183,6 +206,16 @@ class OTAServiceClass {
       return { updated: true, version: targetOtaVersion };
     } catch (err: any) {
       await OTAStorage.cleanupStaging();
+
+      if (
+        err instanceof OTAError &&
+        (err.code === 'APP_ID_MISMATCH' ||
+          err.code === 'APP_VERSION_MISMATCH' ||
+          err.code === 'INVALID_META')
+      ) {
+        await OTAStorage.addRejectedUrl(url, err.message, nativeVersion);
+      }
+
       emit({ status: 'failed', percentage: 0 });
 
       const otaErrorPayload: OTAErrorPayload =

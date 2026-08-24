@@ -55,6 +55,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Temporary files
+# Temporary & Test files
 *.tmp
 .staging/
+src/__tests__/
+__tests__/

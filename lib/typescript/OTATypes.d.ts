@@ -14,7 +14,7 @@ export interface OTAProgressPayload {
     status: 'idle' | 'checking' | 'downloading' | 'downloaded' | 'installed' | 'failed';
 }
 export type OTAProgressCallback = (payload: OTAProgressPayload) => void;
-export type OTAErrorCode = 'DOWNLOAD_FAILED' | 'EXTRACTION_FAILED' | 'INVALID_META' | 'APP_VERSION_MISMATCH' | 'ALREADY_IN_PROGRESS' | 'STORAGE_ERROR' | 'UNKNOWN_ERROR';
+export type OTAErrorCode = 'DOWNLOAD_FAILED' | 'EXTRACTION_FAILED' | 'INVALID_META' | 'APP_ID_MISMATCH' | 'APP_VERSION_MISMATCH' | 'ALREADY_IN_PROGRESS' | 'STORAGE_ERROR' | 'UPDATE_BLACKLISTED' | 'UNKNOWN_ERROR';
 export interface OTAErrorPayload {
     code: OTAErrorCode;
     message: string;

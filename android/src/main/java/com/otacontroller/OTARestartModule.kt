@@ -23,6 +23,7 @@ class OTARestartModule(reactContext: ReactApplicationContext) :
 
     override fun getConstants(): Map<String, Any?> {
         val context = reactApplicationContext
+        val appId = context.packageName ?: ""
         val versionName = try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             pInfo.versionName ?: "unknown"
@@ -32,6 +33,7 @@ class OTARestartModule(reactContext: ReactApplicationContext) :
         // Current loaded bundle ka version return karega
         val otaVersion = OTABundleLoader.getLoadedOtaVersion()
         return mapOf(
+            "appId" to appId,
             "appVersion" to versionName,
             "otaVersion" to otaVersion
         )
@@ -45,6 +47,11 @@ class OTARestartModule(reactContext: ReactApplicationContext) :
         context.startActivity(intent)
         Process.killProcess(Process.myPid())
         exitProcess(0)
+    }
+
+    @ReactMethod(isBlockingSynchronousMethod = true)
+    fun getAppId(): String {
+        return reactApplicationContext.packageName ?: ""
     }
 
     @ReactMethod(isBlockingSynchronousMethod = true)

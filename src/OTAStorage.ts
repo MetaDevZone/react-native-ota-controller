@@ -6,13 +6,25 @@ import {
   OTA_DOWNLOAD_DIR,
   OTA_STAGING_DIR,
   OTA_CURRENT_FILE,
+  OTA_REJECTED_FILE,
 } from './OTAConstants';
 import type { OTACurrentInfo } from './OTATypes';
 
 export type BundleMeta = {
+  appId: string;
   appVersion: string;
   otaVersion?: number;
   builtAt?: string;
+};
+
+export type RejectedEntry = {
+  reason: string;
+  rejectedAt: string;
+};
+
+export type RejectedUpdatesData = {
+  nativeAppVersion: string;
+  rejectedUrls: Record<string, RejectedEntry>;
 };
 
 class OTAStorageClass {
@@ -169,6 +181,70 @@ class OTAStorageClass {
       return JSON.parse(content) as BundleMeta;
     } catch {
       return null;
+    }
+  }
+
+  async readRejectedUpdates(currentNativeVersion: string): Promise<RejectedUpdatesData> {
+    try {
+      const exists = await RNFS.exists(OTA_REJECTED_FILE);
+      if (!exists) {
+        return { nativeAppVersion: currentNativeVersion, rejectedUrls: {} };
+      }
+      const content = await RNFS.readFile(OTA_REJECTED_FILE, 'utf8');
+      const data = JSON.parse(content) as RejectedUpdatesData;
+
+      // Agar App Store / Play Store ka naya binary version install hua ho, to purani rejected list reset karo
+      if (data.nativeAppVersion !== currentNativeVersion) {
+        await this.clearRejectedUpdates();
+        return { nativeAppVersion: currentNativeVersion, rejectedUrls: {} };
+      }
+
+      return data;
+    } catch {
+      return { nativeAppVersion: currentNativeVersion, rejectedUrls: {} };
+    }
+  }
+
+  async getRejectedUrlInfo(
+    url: string,
+    currentNativeVersion: string
+  ): Promise<RejectedEntry | null> {
+    const data = await this.readRejectedUpdates(currentNativeVersion);
+    return data.rejectedUrls?.[url] ?? null;
+  }
+
+  async addRejectedUrl(
+    url: string,
+    reason: string,
+    currentNativeVersion: string
+  ): Promise<void> {
+    try {
+      await this.ensureRootDirs();
+      const data = await this.readRejectedUpdates(currentNativeVersion);
+      data.nativeAppVersion = currentNativeVersion;
+      if (!data.rejectedUrls) data.rejectedUrls = {};
+      data.rejectedUrls[url] = {
+        reason,
+        rejectedAt: new Date().toISOString(),
+      };
+      await RNFS.writeFile(
+        OTA_REJECTED_FILE,
+        JSON.stringify(data, null, 2),
+        'utf8'
+      );
+    } catch (err) {
+      // Ignore background blacklist write failure
+    }
+  }
+
+  async clearRejectedUpdates(): Promise<void> {
+    try {
+      const exists = await RNFS.exists(OTA_REJECTED_FILE);
+      if (exists) {
+        await RNFS.unlink(OTA_REJECTED_FILE);
+      }
+    } catch {
+      // Ignore
     }
   }
 }

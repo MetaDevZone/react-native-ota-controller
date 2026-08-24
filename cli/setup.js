@@ -6,32 +6,39 @@ function getProjectRoot() {
   if (initCwd && fs.existsSync(path.join(initCwd, 'package.json'))) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(initCwd, 'package.json'), 'utf8'));
-      if ((pkg.name === 'react-native-ota-controller' || pkg.name === 'react-native-ota-updater') && fs.existsSync(path.join(initCwd, 'src', 'OTAService.ts'))) {
+      if (
+        (pkg.name === 'react-native-ota-controller' || pkg.name === 'react-native-ota-updater') &&
+        fs.existsSync(path.join(initCwd, 'src', 'OTAService.ts'))
+      ) {
         return null; // Self-development environment, skip
       }
     } catch (_) {}
     return initCwd;
   }
 
-  let current = process.cwd();
-  if (current.includes('node_modules')) {
-    const root = current.split('node_modules')[0];
-    if (fs.existsSync(path.join(root, 'package.json'))) {
-      return root;
+  // Traverse upwards from process.cwd()
+  let dir = process.cwd();
+  while (dir && dir !== path.dirname(dir)) {
+    if (
+      !dir.includes('.pnpm') &&
+      !dir.includes('node_modules') &&
+      fs.existsSync(path.join(dir, 'package.json'))
+    ) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+        if (
+          (pkg.name === 'react-native-ota-controller' || pkg.name === 'react-native-ota-updater') &&
+          fs.existsSync(path.join(dir, 'src', 'OTAService.ts'))
+        ) {
+          return null; // Self repo
+        }
+        return dir;
+      } catch (_) {}
     }
+    dir = path.dirname(dir);
   }
 
-  if (fs.existsSync(path.join(current, 'android')) || fs.existsSync(path.join(current, 'ios'))) {
-    try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(current, 'package.json'), 'utf8'));
-      if ((pkg.name === 'react-native-ota-controller' || pkg.name === 'react-native-ota-updater') && fs.existsSync(path.join(current, 'src', 'OTAService.ts'))) {
-        return null;
-      }
-    } catch (_) {}
-    return current;
-  }
-
-  return null;
+  return process.cwd();
 }
 
 function findFilesRecursively(dir, pattern, results = []) {
@@ -222,6 +229,30 @@ function unlinkIOS(projectRoot) {
   return { status: 'skipped' };
 }
 
+function setupGitignore(projectRoot) {
+  const gitignorePath = path.join(projectRoot, '.gitignore');
+  const entriesToAdd = [];
+
+  let content = '';
+  if (fs.existsSync(gitignorePath)) {
+    content = fs.readFileSync(gitignorePath, 'utf8');
+  }
+
+  if (!content.includes('ota-dist')) {
+    entriesToAdd.push('ota-dist/');
+  }
+
+  if (entriesToAdd.length === 0) {
+    return { status: 'already_configured', file: '.gitignore' };
+  }
+
+  const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+  const block = `${separator}\n# React Native OTA Controller\n${entriesToAdd.join('\n')}\n`;
+
+  fs.appendFileSync(gitignorePath, block, 'utf8');
+  return { status: 'configured', file: '.gitignore', added: entriesToAdd };
+}
+
 function runSetup() {
   const projectRoot = getProjectRoot();
   if (!projectRoot) return;
@@ -247,6 +278,13 @@ function runSetup() {
       console.log(`  ⚠️  iOS: ${iosResult.message}`);
     } else {
       console.log(`  ℹ️  iOS: ${iosResult.reason}`);
+    }
+
+    const gitResult = setupGitignore(projectRoot);
+    if (gitResult.status === 'configured') {
+      console.log(`  ✅ Git: Added ${gitResult.added.join(', ')} to ${gitResult.file}`);
+    } else if (gitResult.status === 'already_configured') {
+      console.log(`  ✨ Git: Already configured in ${gitResult.file}`);
     }
 
     console.log('🚀 [react-native-ota-controller] Setup complete!\n');
@@ -278,7 +316,7 @@ function runUnlink() {
   }
 }
 
-module.exports = { runSetup, runUnlink, setupAndroid, setupIOS, unlinkAndroid, unlinkIOS, getProjectRoot };
+module.exports = { runSetup, runUnlink, setupAndroid, setupIOS, setupGitignore, unlinkAndroid, unlinkIOS, getProjectRoot };
 
 if (require.main === module) {
   if (process.argv.includes('unlink') || process.argv.includes('--unlink')) {

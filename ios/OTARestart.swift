@@ -1,6 +1,10 @@
 import Foundation
 import React
 
+// Link to React Native's C reload function
+@_silgen_name("RCTTriggerReloadCommandListeners")
+func RCTTriggerReloadCommandListeners(_ reason: NSString)
+
 @objc(OTARestart)
 class OTARestart: NSObject, RCTBridgeModule {
 
@@ -20,9 +24,11 @@ class OTARestart: NSObject, RCTBridgeModule {
 
     @objc
     func constantsToExport() -> [AnyHashable: Any]! {
+        let appId = Bundle.main.bundleIdentifier ?? ""
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let otaVersion = OTABundleLoader.getLoadedOtaVersion()
         return [
+            "appId": appId,
             "appVersion": appVersion,
             "otaVersion": otaVersion
         ]
@@ -31,12 +37,13 @@ class OTARestart: NSObject, RCTBridgeModule {
     @objc
     func restart() {
         DispatchQueue.main.async {
-            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let window = windowScene.windows.first else {
-                exit(0)
-            }
-            exit(0)
+            RCTTriggerReloadCommandListeners("OTARestart: reload" as NSString)
         }
+    }
+
+    @objc
+    func getAppId() -> String {
+        return Bundle.main.bundleIdentifier ?? ""
     }
 
     @objc

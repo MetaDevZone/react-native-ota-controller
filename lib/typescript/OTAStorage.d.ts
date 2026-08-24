@@ -1,8 +1,17 @@
 import type { OTACurrentInfo } from './OTATypes';
 export type BundleMeta = {
+    appId: string;
     appVersion: string;
     otaVersion?: number;
     builtAt?: string;
+};
+export type RejectedEntry = {
+    reason: string;
+    rejectedAt: string;
+};
+export type RejectedUpdatesData = {
+    nativeAppVersion: string;
+    rejectedUrls: Record<string, RejectedEntry>;
 };
 declare class OTAStorageClass {
     ensureRootDirs(): Promise<void>;
@@ -17,6 +26,10 @@ declare class OTAStorageClass {
     cleanupStaleBundles(keepVersion: number): Promise<void>;
     clearAll(): Promise<void>;
     readBundleMeta(bundleDir: string): Promise<BundleMeta | null>;
+    readRejectedUpdates(currentNativeVersion: string): Promise<RejectedUpdatesData>;
+    getRejectedUrlInfo(url: string, currentNativeVersion: string): Promise<RejectedEntry | null>;
+    addRejectedUrl(url: string, reason: string, currentNativeVersion: string): Promise<void>;
+    clearRejectedUpdates(): Promise<void>;
 }
 export declare const OTAStorage: OTAStorageClass;
 export {};

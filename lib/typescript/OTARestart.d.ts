@@ -1,4 +1,5 @@
 export declare function restartApp(): void;
+export declare function getAppId(): string;
 export declare function getAppVersion(): string;
 /**
  * Returns the OTA bundle version currently running in the active session.

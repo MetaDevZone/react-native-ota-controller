@@ -21,9 +21,11 @@ export type OTAErrorCode =
   | 'DOWNLOAD_FAILED'
   | 'EXTRACTION_FAILED'
   | 'INVALID_META'
+  | 'APP_ID_MISMATCH'
   | 'APP_VERSION_MISMATCH'
   | 'ALREADY_IN_PROGRESS'
   | 'STORAGE_ERROR'
+  | 'UPDATE_BLACKLISTED'
   | 'UNKNOWN_ERROR';
 
 export interface OTAErrorPayload {

@@ -28,6 +28,19 @@ export function restartApp(): void {
   }
 }
 
+export function getAppId(): string {
+  if (typeof OTARestart?.getAppId === 'function') {
+    try {
+      const id = OTARestart.getAppId();
+      if (typeof id === 'string') return id;
+    } catch {}
+  }
+  if (constants?.appId) {
+    return String(constants.appId);
+  }
+  return '';
+}
+
 export function getAppVersion(): string {
   if (typeof OTARestart?.getAppVersion === 'function') {
     try {
