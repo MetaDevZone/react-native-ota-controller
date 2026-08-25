@@ -38,7 +38,7 @@ if (commandArg === 'setup') {
   console.log('');
   console.log('Optional overrides:');
   console.log('  npx ota build --ota-version <number>');
-  console.log('  npx ota build android --android-ota-version <number>');
-  console.log('  npx ota build ios --ios-ota-version <number>');
+  console.log('  npx ota build android --ota-version <number>');
+  console.log('  npx ota build ios --ota-version <number>');
   process.exit(1);
 }

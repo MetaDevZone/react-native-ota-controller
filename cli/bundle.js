@@ -12,7 +12,7 @@ if (!platformArg || platformArg.startsWith('-')) {
 
 if (!['android', 'ios', 'all'].includes(platformArg)) {
   console.error(
-    'Usage: npx ota-bundle [android|ios|all] [--ota-version <n>] [--android-ota-version <n>] [--ios-ota-version <n>]'
+    'Usage: npx ota-bundle [android|ios|all] [--ota-version <n>]'
   );
   process.exit(1);
 }
@@ -29,9 +29,7 @@ function parseIntFlag(...flags) {
   return undefined;
 }
 
-const cliGenericOtaVersion = parseIntFlag('--ota-version', '--version', '-v');
-const cliAndroidOtaVersion = parseIntFlag('--android-ota-version', '--android-version') ?? cliGenericOtaVersion;
-const cliIosOtaVersion     = parseIntFlag('--ios-ota-version', '--ios-version') ?? cliGenericOtaVersion;
+const cliOtaVersion = parseIntFlag('--ota-version', '--version', '-v');
 
 function detectAndroidVersion() {
   const gradlePath = path.join(process.cwd(), 'android', 'app', 'build.gradle');
@@ -374,23 +372,23 @@ function printSummary(results) {
   if (platformArg === 'android') {
     const appId = detectAndroidAppId();
     const appVersion = detectAndroidVersion() ?? 'unknown';
-    const otaVersion = computeOtaVersion('android', appVersion, cliAndroidOtaVersion);
+    const otaVersion = computeOtaVersion('android', appVersion, cliOtaVersion);
     const res = await bundleAndroid(appVersion, otaVersion, appId);
     results.push(res);
   } else if (platformArg === 'ios') {
     const appId = detectIOSBundleId();
     const appVersion = detectIOSVersion() ?? 'unknown';
-    const otaVersion = computeOtaVersion('ios', appVersion, cliIosOtaVersion);
+    const otaVersion = computeOtaVersion('ios', appVersion, cliOtaVersion);
     const res = await bundleIOS(appVersion, otaVersion, appId);
     results.push(res);
   } else {
     const androidAppId   = detectAndroidAppId();
     const androidVersion = detectAndroidVersion() ?? 'unknown';
-    const androidOtaVer  = computeOtaVersion('android', androidVersion, cliAndroidOtaVersion);
+    const androidOtaVer  = computeOtaVersion('android', androidVersion, cliOtaVersion);
 
     const iosAppId       = detectIOSBundleId();
     const iosVersion     = detectIOSVersion() ?? 'unknown';
-    const iosOtaVer      = computeOtaVersion('ios', iosVersion, cliIosOtaVersion);
+    const iosOtaVer      = computeOtaVersion('ios', iosVersion, cliOtaVersion);
 
     const androidRes = await bundleAndroid(androidVersion, androidOtaVer, androidAppId);
     const iosRes     = await bundleIOS(iosVersion, iosOtaVer, iosAppId);

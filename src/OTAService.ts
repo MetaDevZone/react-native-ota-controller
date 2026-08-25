@@ -97,8 +97,6 @@ class OTAServiceClass {
     emit({ status: 'idle', percentage: 0 });
 
     try {
-      const previous = await OTAStorage.readCurrent();
-
       let zipPath: string;
       try {
         zipPath = await OTADownloader.downloadBundle(
