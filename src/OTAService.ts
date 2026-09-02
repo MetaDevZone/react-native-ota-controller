@@ -78,17 +78,29 @@ class OTAServiceClass {
     }
     isDownloading = true;
 
+    let lastDownloadedBytes = 0;
+    let lastTotalBytes = 0;
+    let lastDownloadedMB = '0.0 MB';
+    let lastTotalMB = '';
+
     const emit = (
       partial: Omit<OTAProgressPayload, 'downloadedBytes' | 'totalBytes' | 'downloadedMB' | 'totalMB'> & {
         downloadedBytes?: number;
         totalBytes?: number;
+        downloadedMB?: string;
+        totalMB?: string;
       }
     ) => {
+      if (partial.downloadedBytes !== undefined) lastDownloadedBytes = partial.downloadedBytes;
+      if (partial.totalBytes !== undefined) lastTotalBytes = partial.totalBytes;
+      if (partial.downloadedMB !== undefined) lastDownloadedMB = partial.downloadedMB;
+      if (partial.totalMB !== undefined) lastTotalMB = partial.totalMB;
+
       onProgress?.({
-        downloadedBytes: partial.downloadedBytes ?? 0,
-        totalBytes: partial.totalBytes ?? 0,
-        downloadedMB: '0.0 MB',
-        totalMB: '',
+        downloadedBytes: partial.downloadedBytes ?? lastDownloadedBytes,
+        totalBytes: partial.totalBytes ?? lastTotalBytes,
+        downloadedMB: partial.downloadedMB ?? lastDownloadedMB,
+        totalMB: partial.totalMB ?? lastTotalMB,
         percentage: partial.percentage,
         status: partial.status,
       });
