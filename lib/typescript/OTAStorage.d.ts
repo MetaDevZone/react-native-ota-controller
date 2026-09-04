@@ -3,6 +3,7 @@ export type BundleMeta = {
     appId: string;
     appVersion: string;
     otaVersion?: number;
+    channel?: string;
     builtAt?: string;
 };
 export type RejectedEntry = {
@@ -30,6 +31,8 @@ declare class OTAStorageClass {
     getRejectedUrlInfo(url: string, currentNativeVersion: string): Promise<RejectedEntry | null>;
     addRejectedUrl(url: string, reason: string, currentNativeVersion: string): Promise<void>;
     clearRejectedUpdates(): Promise<void>;
+    markInstallReported(version: number): Promise<void>;
+    isInstallReported(version: number): Promise<boolean>;
 }
 export declare const OTAStorage: OTAStorageClass;
 export {};

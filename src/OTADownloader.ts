@@ -6,12 +6,16 @@ const MAX_RETRIES = 2;
 const CONNECTIVITY_TIMEOUT_MS = 5000;
 const RETRY_WAIT_MS = 2500;
 
-async function checkNetworkConnectivity(url: string): Promise<boolean> {
+async function checkNetworkConnectivity(
+  url: string,
+  headers?: Record<string, string>
+): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONNECTIVITY_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       method: 'HEAD',
+      headers,
       signal: controller.signal,
     });
     return res.ok || res.status < 500;
@@ -36,11 +40,13 @@ async function deleteFileIfExists(path: string): Promise<void> {
 async function performSingleDownload(
   url: string,
   destPath: string,
-  onProgress: OTAProgressCallback
+  onProgress: OTAProgressCallback,
+  headers?: Record<string, string>
 ): Promise<void> {
   const { promise } = RNFS.downloadFile({
     fromUrl: url,
     toFile: destPath,
+    headers,
     begin: (res) => {
       const hasKnownSize = res.contentLength > 0;
       const toMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1) + ' MB';
@@ -84,14 +90,15 @@ async function performSingleDownload(
 async function downloadWithRetry(
   url: string,
   destPath: string,
-  onProgress: OTAProgressCallback
+  onProgress: OTAProgressCallback,
+  headers?: Record<string, string>
 ): Promise<void> {
   let lastError: Error = new Error('OTA: download failed (unknown reason)');
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     await deleteFileIfExists(destPath);
 
-    const isOnline = await checkNetworkConnectivity(url);
+    const isOnline = await checkNetworkConnectivity(url, headers);
     if (!isOnline) {
       console.log(
         `OTA: attempt ${attempt + 1} — network unavailable, waiting ${RETRY_WAIT_MS}ms`
@@ -100,7 +107,7 @@ async function downloadWithRetry(
     }
 
     try {
-      await performSingleDownload(url, destPath, onProgress);
+      await performSingleDownload(url, destPath, onProgress, headers);
       return;
     } catch (err: any) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -129,12 +136,13 @@ class OTADownloaderClass {
 
   async downloadBundle(
     url: string,
-    onProgress: OTAProgressCallback
+    onProgress: OTAProgressCallback,
+    headers?: Record<string, string>
   ): Promise<string> {
     await this.ensureDownloadDir();
     const destPath = `${OTA_DOWNLOAD_DIR}/update.zip`;
 
-    await downloadWithRetry(url, destPath, onProgress);
+    await downloadWithRetry(url, destPath, onProgress, headers);
 
     return destPath;
   }

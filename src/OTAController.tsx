@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { OTAService } from './OTAService';
-import type { OTAErrorPayload, OTAProgressPayload } from './OTATypes';
+import { OTA, OTAError } from './OTAService';
+import type {
+  OTAErrorPayload,
+  OTAProgressPayload,
+  OTAReleaseInfo,
+} from './OTATypes';
 
 export interface OTAControllerProgressPayload {
   downloaded: number;
@@ -17,24 +21,45 @@ export interface OTAControllerCallbacks {
 }
 
 export interface OTAControllerProps {
-  url: string;
+  release?: OTAReleaseInfo;
   autoRestart?: boolean;
+  onProgress?: (payload: OTAControllerProgressPayload) => void;
+  onStateChange?: (state: OTAProgressPayload['status']) => void;
+  onError?: (error: OTAErrorPayload) => void;
   callbacks?: OTAControllerCallbacks;
 }
 
+/**
+ * Drop-in interactive screen controller.
+ * Accepts a `release` object (or automatically uses the cached release from checkForUpdate).
+ * Zero duplicate network re-checking: starts downloading and reporting progress immediately.
+ */
 export function OTAController(props: OTAControllerProps): null {
   const {
-    url,
-    autoRestart,
+    release,
+    autoRestart = true,
+    onProgress,
+    onStateChange,
+    onError,
     callbacks,
   } = props;
 
   const propsRef = useRef({
-    url,
+    release,
     autoRestart,
+    onProgress,
+    onStateChange,
+    onError,
     callbacks,
   });
-  propsRef.current = { url, autoRestart, callbacks };
+  propsRef.current = {
+    release,
+    autoRestart,
+    onProgress,
+    onStateChange,
+    onError,
+    callbacks,
+  };
 
   const cancelledRef = useRef(false);
 
@@ -42,40 +67,60 @@ export function OTAController(props: OTAControllerProps): null {
     cancelledRef.current = false;
 
     const {
-      url: mountUrl,
+      release: mountRelease,
       autoRestart: mountAutoRestart,
+      onProgress: mountOnProgress,
+      onStateChange: mountOnStateChange,
+      onError: mountOnError,
       callbacks: mountCallbacks,
     } = propsRef.current;
 
-    if (!mountUrl) return;
+    const emitProgress = (payload: OTAControllerProgressPayload) => {
+      if (cancelledRef.current) return;
+      mountOnProgress?.(payload);
+      mountCallbacks?.onProgress?.(payload);
+    };
 
-    let started = false;
+    const emitStateChange = (state: OTAProgressPayload['status']) => {
+      if (cancelledRef.current) return;
+      mountOnStateChange?.(state);
+      mountCallbacks?.onStateChange?.(state);
+    };
+
+    const emitError = (error: OTAErrorPayload) => {
+      if (cancelledRef.current) return;
+      console.warn(`OTAController Error [${error.code}]:`, error.message);
+      mountOnError?.(error);
+      mountCallbacks?.onError?.(error);
+    };
+
+    const targetRelease = mountRelease || OTA.getLastCheckResult()?.release;
+    if (!targetRelease) {
+      const err = new OTAError(
+        'DOWNLOAD_FAILED',
+        'OTAController: No release provided and no active release found from checkForUpdate().'
+      );
+      emitError(err.toPayload());
+      return;
+    }
 
     (async () => {
       try {
-        await OTAService.reportBootSuccess();
+        await OTA.reportBootSuccess();
 
-        mountCallbacks?.onStateChange?.('checking');
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        emitStateChange('checking');
+        await new Promise((resolve) => setTimeout(resolve, 800));
 
         if (cancelledRef.current) return;
 
-        started = true;
-
-        await OTAService.downloadAndApplyUpdate({
-          url: mountUrl,
+        await OTA.downloadAndApplyUpdate({
+          release: targetRelease,
           autoRestart: mountAutoRestart,
-          onError: (errorPayload: OTAErrorPayload) => {
+          onError: emitError,
+          onProgress: (payload) => {
             if (cancelledRef.current) return;
-            console.warn(`OTAController Error [${errorPayload.code}]:`, errorPayload.message);
-            mountCallbacks?.onError?.(errorPayload);
-          },
-          onProgress: (payload: OTAProgressPayload) => {
-            if (cancelledRef.current) return;
-
-            mountCallbacks?.onStateChange?.(payload.status);
-
-            mountCallbacks?.onProgress?.({
+            emitStateChange(payload.status);
+            emitProgress({
               downloaded: payload.downloadedBytes,
               fullSize: payload.totalBytes,
               percentage: payload.percentage,
@@ -85,15 +130,14 @@ export function OTAController(props: OTAControllerProps): null {
           },
         });
       } catch (err: any) {
-        // Error handling already forwarded to onError callback
+        // Error handling already forwarded to onError
       }
     })();
 
     return () => {
       cancelledRef.current = true;
-      if (!started) return;
     };
-  }, [url]);
+  }, [release]);
 
   return null;
 }

@@ -3,14 +3,31 @@ import { OTADownloader } from './OTADownloader';
 import { OTAStorage } from './OTAStorage';
 import type { BundleMeta } from './OTAStorage';
 import type {
+  OTAChannel,
+  OTAConfig,
+  OTACheckUpdateOptions,
+  OTACheckUpdateResult,
   OTACurrentInfo,
   OTADownloadOptions,
   OTAErrorCode,
   OTAErrorPayload,
   OTAProgressPayload,
+  OTAReleaseInfo,
 } from './OTATypes';
-import { OTA_BUNDLE_FILE_NAME, OTA_BUNDLE_FILE_NAME_IOS } from './OTAConstants';
-import { confirmNativeBootSuccess, getAppId, getAppVersion, getOtaVersion, restartApp } from './OTARestart';
+import {
+  OTA_API_BASE_URL,
+  OTA_BUNDLE_FILE_NAME,
+  OTA_BUNDLE_FILE_NAME_IOS,
+  OTA_CHECK_UPDATE_PATH,
+  OTA_EVENTS_PATH,
+} from './OTAConstants';
+import {
+  confirmNativeBootSuccess,
+  getAppId,
+  getAppVersion,
+  getOtaVersion,
+  restartApp,
+} from './OTARestart';
 
 const MAX_BOOT_FAIL_COUNT = 2;
 
@@ -37,32 +54,338 @@ export class OTAError extends Error {
 }
 
 class OTAServiceClass {
+  private config: OTAConfig | null = null;
+  private cachedCheckResult: OTACheckUpdateResult | null = null;
+  private reportedDownloads = new Set<string>();
+
+  /**
+   * Configure global credentials for the OTALink SDK.
+   * Called automatically by <OTAProvider apiKey="..." /> on mount.
+   */
+  configure(config: OTAConfig): void {
+    if (!config?.apiKey || typeof config.apiKey !== 'string' || !config.apiKey.trim()) {
+      throw new OTAError('API_KEY_MISSING', 'OTA: apiKey is required in configure().');
+    }
+
+    this.config = {
+      ...config,
+      apiKey: config.apiKey.trim(),
+    };
+  }
+
+  getConfig(): OTAConfig | null {
+    return this.config;
+  }
+
+  isConfigured(): boolean {
+    return Boolean(this.config?.apiKey);
+  }
+
+  getLastCheckResult(): OTACheckUpdateResult | null {
+    return this.cachedCheckResult;
+  }
+
+  setLastCheckResult(result: OTACheckUpdateResult | null): void {
+    this.cachedCheckResult = result;
+  }
+
+  /**
+   * Report telemetry event ("download" | "install") to the OTALink backend.
+   * Non-blocking and resilient — catches failures so runtime updates are never disrupted.
+   */
+  async reportEvent(
+    event: 'download' | 'install' | string,
+    metadata?: Record<string, any>
+  ): Promise<boolean> {
+    const apiKey = this.config?.apiKey;
+    if (!apiKey) {
+      console.warn('OTA: Cannot report event — apiKey is not configured.');
+      return false;
+    }
+
+    const platform =
+      this.config?.platform ?? (Platform.OS === 'ios' ? 'ios' : 'android');
+    const bundleId = this.config?.bundleId || getAppId();
+
+    const payload = {
+      platform,
+      bundleId,
+      event,
+      ...metadata,
+    };
+
+    const url = `${OTA_API_BASE_URL}${OTA_EVENTS_PATH}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ota-app-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      return res.ok;
+    } catch (err: any) {
+      console.warn(`OTA: Failed to report event "${event}":`, err?.message ?? err);
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Check for updates against the OTALink backend (POST /api/ota/public/check-update).
+   * Zero apiKey needed here — automatically uses the apiKey from <OTAProvider apiKey="..." />.
+   */
+  async checkForUpdate(
+    options?: OTACheckUpdateOptions
+  ): Promise<OTACheckUpdateResult> {
+    if (this.config?.disableInDev && typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[OTA] checkForUpdate skipped: disableInDev is enabled.');
+      return {
+        updateAvailable: false,
+        currentOtaVersion: getOtaVersion(),
+        reason: 'OTA check disabled in __DEV__ mode',
+        isBlackList: false,
+      };
+    }
+
+    const apiKey = this.config?.apiKey;
+    if (!apiKey) {
+      throw new OTAError(
+        'API_KEY_MISSING',
+        'OTA: apiKey is required. Pass it once in <OTAProvider apiKey="..." /> at your app root.'
+      );
+    }
+
+    const platform =
+      options?.platform ??
+      this.config?.platform ??
+      (Platform.OS === 'ios' ? 'ios' : 'android');
+
+    const bundleId = options?.bundleId ?? this.config?.bundleId ?? getAppId();
+
+    const version_no =
+      options?.version_no ??
+      options?.appVersion ??
+      getAppVersion();
+
+    const currentOtaVersion = Number(
+      options?.build_no ??
+      options?.currentOtaVersion ??
+      this.config?.currentOtaVersion ??
+      getOtaVersion()
+    );
+
+    const build_no = currentOtaVersion;
+    const rawChannel = options?.channel ?? this.config?.channel ?? 'production';
+    if (rawChannel !== 'development' && rawChannel !== 'production') {
+      throw new OTAError(
+        'INVALID_CHANNEL',
+        `OTA: Invalid channel "${rawChannel}". Allowed channels are only "development" | "production".`
+      );
+    }
+    const channel: OTAChannel = rawChannel;
+
+    const requestBody: Record<string, any> = {
+      bundleId,
+      platform,
+      version_no,
+      build_no,
+      channel,
+    };
+
+    const url = `${OTA_API_BASE_URL}${OTA_CHECK_UPDATE_PATH}`;
+    const timeoutMs = options?.timeoutMs ?? this.config?.timeoutMs ?? 15000;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[OTA] checkForUpdate request =>', {
+        url,
+        method: 'POST',
+        headers: {
+          'x-ota-app-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: requestBody,
+      });
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'x-ota-app-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      throw new OTAError(
+        'NETWORK_ERROR',
+        `OTA: Network request failed when checking for updates — ${err?.message ?? err}`,
+        err
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (res.status === 401) {
+      throw new OTAError('UNAUTHORIZED', 'OTA: Invalid API key (401 Unauthorized)');
+    }
+    if (res.status === 403) {
+      throw new OTAError('FORBIDDEN', 'OTA: App bundle ID mismatch or app inactive (403 Forbidden)');
+    }
+    if (res.status === 404) {
+      const emptyResult: OTACheckUpdateResult = {
+        updateAvailable: false,
+        currentOtaVersion,
+        isBlackList: false,
+      };
+      this.cachedCheckResult = emptyResult;
+      return emptyResult;
+    }
+    if (!res.ok) {
+      throw new OTAError('NETWORK_ERROR', `OTA: Server returned HTTP status ${res.status}`);
+    }
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch (err: any) {
+      throw new OTAError(
+        'NETWORK_ERROR',
+        'OTA: Failed to parse server response as JSON',
+        err
+      );
+    }
+
+    const data = json?.data ?? json;
+    const updateAvailable = Boolean(data?.updateAvailable ?? data?.update_available);
+    const rawRelease = data?.release ?? (data?.bundleUrl ? data : undefined);
+
+    let release: OTAReleaseInfo | undefined;
+    if (rawRelease && (rawRelease.bundleUrl || rawRelease.bundle_url || rawRelease.file_url)) {
+      release = {
+        id: String(rawRelease.id ?? rawRelease.releaseId ?? rawRelease._id ?? ''),
+        platform: String(rawRelease.platform ?? Platform.OS),
+        appVersion: rawRelease.appVersion ?? rawRelease.app_version,
+        buildNumber: rawRelease.buildNumber ?? rawRelease.build_no,
+        bundleUrl: rawRelease.bundleUrl ?? rawRelease.bundle_url ?? rawRelease.file_url,
+        bundleSizeBytes: rawRelease.bundleSizeBytes ?? rawRelease.bundle_size_bytes,
+        updateSilently: Boolean(rawRelease.updateSilently ?? rawRelease.update_silently),
+        skipOnStoreUpdate: Boolean(rawRelease.skipOnStoreUpdate ?? rawRelease.skip_on_store_update),
+        autoRestart:
+          rawRelease.autoRestart !== undefined
+            ? Boolean(rawRelease.autoRestart)
+            : undefined,
+        publishedAt: rawRelease.publishedAt ?? rawRelease.published_at,
+      };
+    }
+
+    const bundleUrlToCheck = release?.bundleUrl;
+    const nativeAppVersion = getAppVersion();
+    const isBlackList = Boolean(
+      bundleUrlToCheck
+        ? await OTAStorage.getRejectedUrlInfo(bundleUrlToCheck, nativeAppVersion)
+        : false
+    );
+
+    const result: OTACheckUpdateResult = {
+      updateAvailable,
+      ...(release ? { release } : {}),
+      ...(currentOtaVersion !== undefined ? { currentOtaVersion } : {}),
+      ...(data?.reason ? { reason: data.reason } : {}),
+      isBlackList,
+    };
+
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[OTA] checkForUpdate result =>', result);
+    }
+
+    this.cachedCheckResult = result;
+    return result;
+  }
+
   getActiveVersion(): number {
     return getOtaVersion();
   }
 
+  getAppVersion(): string {
+    return getAppVersion();
+  }
+
+  getOtaVersion(): number {
+    return getOtaVersion();
+  }
+
+  getAppId(): string {
+    return getAppId();
+  }
+
+  restartApp(): void {
+    restartApp();
+  }
+
+  /**
+   * Download and apply an OTA bundle zip file.
+   * Downloads to temp directory, extracts into staging, validates bundle metadata,
+   * promotes to active bundles directory, and optionally restarts.
+   */
   async downloadAndApplyUpdate(
-    options: OTADownloadOptions
+    options?: OTADownloadOptions
   ): Promise<{ updated: boolean; version?: number }> {
-    const { url, onProgress, onError, autoRestart } = options;
+    const targetRelease = options?.release || this.getLastCheckResult()?.release;
+    let url =
+      targetRelease?.bundleUrl ??
+      targetRelease?.bundle_url ??
+      targetRelease?.file_url;
+
+    const { onProgress, onError, autoRestart } = options || {};
 
     if (!url) {
       const err = new OTAError(
         'DOWNLOAD_FAILED',
-        'OTA: No download URL provided in options'
+        'OTA: No release provided and no active release found from checkForUpdate().'
       );
       onError?.(err.toPayload());
       throw err;
     }
 
+    const apiKey = this.config?.apiKey;
+    const downloadHeaders: Record<string, string> = {
+      Accept: 'application/octet-stream, application/zip, */*',
+    };
+    if (apiKey) {
+      downloadHeaders['x-ota-app-key'] = apiKey;
+    }
+
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[OTA] downloadAndApplyUpdate downloading from =>', {
+        url,
+        headers: downloadHeaders,
+      });
+    }
+
     const nativeVersion = getAppVersion();
     const nativeAppId = getAppId();
 
-    const rejectedInfo = await OTAStorage.getRejectedUrlInfo(url, nativeVersion);
-    if (rejectedInfo) {
+    const isBlacklisted = await OTAStorage.getRejectedUrlInfo(url, nativeVersion);
+    if (isBlacklisted) {
       const err = new OTAError(
         'UPDATE_BLACKLISTED',
-        `OTA: Skipping update — bundle URL was previously rejected (${rejectedInfo.reason})`
+        `OTA: Bundle at ${url} was previously rejected and blacklisted for this native build.`
       );
       onError?.(err.toPayload());
       throw err;
@@ -71,75 +394,65 @@ class OTAServiceClass {
     if (isDownloading) {
       const err = new OTAError(
         'ALREADY_IN_PROGRESS',
-        'OTA: An update download is already in progress'
+        'OTA: Another download/update operation is already in progress'
       );
       onError?.(err.toPayload());
       throw err;
     }
+
     isDownloading = true;
 
-    let lastDownloadedBytes = 0;
-    let lastTotalBytes = 0;
-    let lastDownloadedMB = '0.0 MB';
-    let lastTotalMB = '';
-
-    const emit = (
-      partial: Omit<OTAProgressPayload, 'downloadedBytes' | 'totalBytes' | 'downloadedMB' | 'totalMB'> & {
-        downloadedBytes?: number;
-        totalBytes?: number;
-        downloadedMB?: string;
-        totalMB?: string;
-      }
-    ) => {
-      if (partial.downloadedBytes !== undefined) lastDownloadedBytes = partial.downloadedBytes;
-      if (partial.totalBytes !== undefined) lastTotalBytes = partial.totalBytes;
-      if (partial.downloadedMB !== undefined) lastDownloadedMB = partial.downloadedMB;
-      if (partial.totalMB !== undefined) lastTotalMB = partial.totalMB;
-
-      onProgress?.({
-        downloadedBytes: partial.downloadedBytes ?? lastDownloadedBytes,
-        totalBytes: partial.totalBytes ?? lastTotalBytes,
-        downloadedMB: partial.downloadedMB ?? lastDownloadedMB,
-        totalMB: partial.totalMB ?? lastTotalMB,
-        percentage: partial.percentage,
-        status: partial.status,
-      });
+    let lastProgress: OTAProgressPayload = {
+      downloadedBytes: 0,
+      totalBytes: 0,
+      percentage: 0,
+      downloadedMB: '0.00',
+      totalMB: '0.00',
+      status: 'idle',
     };
 
-    emit({ status: 'idle', percentage: 0 });
+    const emit = (partial: Partial<OTAProgressPayload>) => {
+      lastProgress = {
+        ...lastProgress,
+        ...partial,
+      };
+      onProgress?.(lastProgress);
+    };
 
     try {
-      let zipPath: string;
-      try {
-        zipPath = await OTADownloader.downloadBundle(
-          url,
-          (payload) => emit(payload)
-        );
-      } catch (err: any) {
-        throw new OTAError(
-          'DOWNLOAD_FAILED',
-          `OTA: Failed to download update zip from ${url} — ${err?.message ?? err}`,
-          err
-        );
+      emit({ status: 'checking', percentage: 0 });
+
+      const zipPath = await OTADownloader.downloadBundle(
+        url,
+        (payload) => {
+          emit(payload);
+        },
+        downloadHeaders
+      );
+
+      emit({ status: 'downloaded', percentage: 100 });
+
+      // Automatically report "download" event to OTALink backend if configured
+      if (!this.reportedDownloads.has(url)) {
+        this.reportedDownloads.add(url);
+        this.reportEvent('download').catch(() => {});
       }
 
-      let stagingDir: string;
-      try {
-        stagingDir = await OTAStorage.extractToStaging(zipPath);
-      } catch (err: any) {
-        throw new OTAError(
-          'EXTRACTION_FAILED',
-          `OTA: Failed to extract update zip archive — ${err?.message ?? err}`,
-          err
-        );
-      }
+      const stagingDir = await OTAStorage.extractToStaging(zipPath);
 
-      const meta: BundleMeta | null = await OTAStorage.readBundleMeta(stagingDir);
-
-      if (meta === null) {
+      const meta = await OTAStorage.readBundleMeta(stagingDir);
+      if (!meta) {
         throw new OTAError(
           'INVALID_META',
-          'OTA: Bundle is corrupt or missing meta.json manifest'
+          'OTA: Missing or invalid meta.json in staged bundle'
+        );
+      }
+      const metaOtaVersion = Number(meta.otaVersion);
+
+      if (!metaOtaVersion || isNaN(metaOtaVersion) || metaOtaVersion <= 0) {
+        throw new OTAError(
+          'INVALID_META',
+          `OTA: Invalid or missing otaVersion in staged bundle meta.json: "${meta.otaVersion}"`
         );
       }
 
@@ -159,42 +472,43 @@ class OTAServiceClass {
         );
       }
 
-      const targetOtaVersion = meta.otaVersion ?? 1;
-      const activeVersion = this.getActiveVersion();
-
-      if (targetOtaVersion <= activeVersion) {
-        await OTAStorage.cleanupStaging();
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        emit({ status: 'downloaded', percentage: 100 });
-        return { updated: false, version: activeVersion };
-      }
-
-      let bundleDir: string;
-      try {
-        bundleDir = await OTAStorage.promoteStaging(targetOtaVersion);
-      } catch (err: any) {
+      const currentChannel = this.config?.channel || 'production';
+      const bundleChannel = meta.channel || 'production';
+      if (bundleChannel !== currentChannel) {
         throw new OTAError(
-          'STORAGE_ERROR',
-          `OTA: Failed to promote staging bundle to storage — ${err?.message ?? err}`,
-          err
+          'CHANNEL_MISMATCH',
+          `OTA: Channel mismatch — bundle is built for channel "${bundleChannel}", but device is configured for channel "${currentChannel}"`
         );
       }
 
-      const bundleFileName =
-        Platform.OS === 'ios' ? OTA_BUNDLE_FILE_NAME_IOS : OTA_BUNDLE_FILE_NAME;
-      const bundlePath = `${bundleDir}/${bundleFileName}`;
+      const activeVersion = getOtaVersion();
+      if (metaOtaVersion <= activeVersion) {
+        await OTAStorage.cleanupStaging();
+        emit({ status: 'idle', percentage: 100 });
+        return { updated: false, version: activeVersion };
+      }
 
-      const newCurrent: OTACurrentInfo = {
+      const targetOtaVersion = metaOtaVersion;
+      await OTAStorage.promoteStaging(targetOtaVersion);
+
+      const isAndroid = Platform.OS === 'android';
+      const bundleFileName = isAndroid
+        ? OTA_BUNDLE_FILE_NAME
+        : OTA_BUNDLE_FILE_NAME_IOS;
+
+      const bundleDir = OTAStorage.bundleDirForVersion(targetOtaVersion);
+      const activeBundlePath = `${bundleDir}/${bundleFileName}`;
+
+      const newManifest: OTACurrentInfo = {
         activeVersion: targetOtaVersion,
-        activeBundlePath: bundlePath,
+        activeBundlePath,
         updatedAt: new Date().toISOString(),
         bootFailCount: 0,
         builtForNativeVersion: nativeVersion,
       };
 
       try {
-        await OTAStorage.writeCurrent(newCurrent);
-        // Successful OTA update applied -> reset rejected URLs list
+        await OTAStorage.writeCurrent(newManifest);
         await OTAStorage.clearRejectedUpdates();
       } catch (err: any) {
         throw new OTAError(
@@ -221,6 +535,7 @@ class OTAServiceClass {
         err instanceof OTAError &&
         (err.code === 'APP_ID_MISMATCH' ||
           err.code === 'APP_VERSION_MISMATCH' ||
+          err.code === 'CHANNEL_MISMATCH' ||
           err.code === 'INVALID_META')
       ) {
         await OTAStorage.addRejectedUrl(url, err.message, nativeVersion);
@@ -244,20 +559,43 @@ class OTAServiceClass {
     }
   }
 
+  /**
+   * Called on app boot to confirm that native JS bundle loaded successfully.
+   * If this is the first boot after an update restart, reports the "install" event
+   * to the OTALink dashboard and purges older inactive bundles.
+   */
   async reportBootSuccess(): Promise<void> {
-    await confirmNativeBootSuccess();
+    try {
+      await confirmNativeBootSuccess();
 
-    const current = await OTAStorage.readCurrent();
-    if (!current) return;
+      const current = await OTAStorage.readCurrent();
+      if (!current) return;
 
-    if (current.bootFailCount !== 0) {
-      current.bootFailCount = 0;
-      await OTAStorage.writeCurrent(current);
-    }
+      if (current.bootFailCount !== 0) {
+        current.bootFailCount = 0;
+        await OTAStorage.writeCurrent(current);
+      }
 
-    // Clean up older stale bundle directories on disk now that active bundle booted successfully
-    if (typeof current.activeVersion === 'number' && current.activeVersion > 0) {
-      await OTAStorage.cleanupStaleBundles(current.activeVersion);
+      // Telemetry: report post-restart first-run install event
+      const currentOtaVersion = getOtaVersion();
+      if (currentOtaVersion > 0) {
+        const isReported = await OTAStorage.isInstallReported(currentOtaVersion);
+        if (!isReported) {
+          const success = await this.reportEvent('install', {
+            otaVersion: currentOtaVersion,
+          });
+          if (success) {
+            await OTAStorage.markInstallReported(currentOtaVersion);
+          }
+        }
+      }
+
+      // Clean up older stale bundle directories on disk
+      if (typeof current.activeVersion === 'number' && current.activeVersion > 0) {
+        await OTAStorage.cleanupStaleBundles(current.activeVersion);
+      }
+    } catch (err: any) {
+      console.warn('OTA: reportBootSuccess error:', err?.message ?? err);
     }
   }
 
@@ -282,4 +620,6 @@ class OTAServiceClass {
   }
 }
 
-export const OTAService = new OTAServiceClass();
+export const OTA = new OTAServiceClass();
+export const OTAService = OTA;
+export const OTALink = OTA; // Backward-compatible alias

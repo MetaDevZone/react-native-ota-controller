@@ -14,6 +14,7 @@ export type BundleMeta = {
   appId: string;
   appVersion: string;
   otaVersion?: number;
+  channel?: string;
   builtAt?: string;
 };
 
@@ -245,6 +246,28 @@ class OTAStorageClass {
       }
     } catch {
       // Ignore
+    }
+  }
+
+  async markInstallReported(version: number): Promise<void> {
+    try {
+      const current = await this.readCurrent();
+      if (current) {
+        current.installReportedVersion = version;
+        await this.writeCurrent(current);
+      }
+    } catch {
+      // Ignore background storage write error
+    }
+  }
+
+  async isInstallReported(version: number): Promise<boolean> {
+    try {
+      const current = await this.readCurrent();
+      if (!current) return false;
+      return current.installReportedVersion === version;
+    } catch {
+      return false;
     }
   }
 }

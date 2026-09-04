@@ -55,8 +55,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Temporary & Test files
+# Temporary & Coverage files
 *.tmp
 .staging/
-src/__tests__/
-__tests__/
+coverage/
+

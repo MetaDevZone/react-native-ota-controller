@@ -3173,7 +3173,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react@npm:^19.2.0":
+"@types/react-test-renderer@npm:^19":
+  version: 19.1.0
+  resolution: "@types/react-test-renderer@npm:19.1.0"
+  dependencies:
+    "@types/react": "npm:*"
+  checksum: 10c0/799654e430df10aeaf267d71507fb64ec151359ead7e3774111bfd4abce7e0911dba461811195c06c22a6d17496ea92537d3185320ff4112fe29954cad1b9152
+  languageName: node
+  linkType: hard
+
+"@types/react@npm:*, @types/react@npm:^19.2.0":
   version: 19.2.18
   resolution: "@types/react@npm:19.2.18"
   dependencies:
@@ -9308,6 +9317,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-is@npm:^19.2.8":
+  version: 19.2.8
+  resolution: "react-is@npm:19.2.8"
+  checksum: 10c0/ed5322c84efe035c8fc814b1614ff5ca7fb8c2872a7c045197daf99f9b1bd68f32a2c79ffcbcfcff2fc5d93924ff9f9447400898f5b1534e6302bb0736a257f0
+  languageName: node
+  linkType: hard
+
 "react-native-builder-bob@npm:^0.41.0":
   version: 0.41.0
   resolution: "react-native-builder-bob@npm:0.41.0"
@@ -9381,6 +9397,7 @@ __metadata:
     "@release-it/conventional-changelog": "npm:^11.0.1"
     "@types/archiver": "npm:^8"
     "@types/react": "npm:^19.2.0"
+    "@types/react-test-renderer": "npm:^19"
     archiver: "npm:^7.0.0"
     commitlint: "npm:^21.0.2"
     del-cli: "npm:^7.0.0"
@@ -9396,16 +9413,19 @@ __metadata:
     react-native-builder-bob: "npm:^0.41.0"
     react-native-fs: "npm:^2.20.0"
     react-native-zip-archive: "npm:^9.0.2"
+    react-test-renderer: "npm:^19.2.8"
     release-it: "npm:^20.2.0"
     turbo: "npm:^2.9.16"
     typescript: "npm:^6.0.3"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-fs: ~2.20.0
-    react-native-zip-archive: ~9.0.2
+    react-native-fs: ">= 2.20.0"
+    react-native-zip-archive: ">= 6.0.0"
   bin:
+    ota: ./cli/index.js
     ota-bundle: ./cli/index.js
+    react-native-ota-controller: ./cli/index.js
   languageName: unknown
   linkType: soft
 
@@ -9474,6 +9494,18 @@ __metadata:
   version: 0.14.2
   resolution: "react-refresh@npm:0.14.2"
   checksum: 10c0/875b72ef56b147a131e33f2abd6ec059d1989854b3ff438898e4f9310bfcc73acff709445b7ba843318a953cb9424bcc2c05af2b3d80011cee28f25aef3e2ebb
+  languageName: node
+  linkType: hard
+
+"react-test-renderer@npm:^19.2.8":
+  version: 19.2.8
+  resolution: "react-test-renderer@npm:19.2.8"
+  dependencies:
+    react-is: "npm:^19.2.8"
+    scheduler: "npm:^0.27.0"
+  peerDependencies:
+    react: ^19.2.8
+  checksum: 10c0/3ecb6b68f9658050bbe7f8e04fed58644c5693b1a5a716d78dd4ad9defac184e658f8a153265903e75b438f4aee5a7f2c6a9565ccce8e6321a93bb0237c04e66
   languageName: node
   linkType: hard
 
@@ -9856,7 +9888,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"scheduler@npm:0.27.0":
+"scheduler@npm:0.27.0, scheduler@npm:^0.27.0":
   version: 0.27.0
   resolution: "scheduler@npm:0.27.0"
   checksum: 10c0/4f03048cb05a3c8fddc45813052251eca00688f413a3cee236d984a161da28db28ba71bd11e7a3dd02f7af84ab28d39fb311431d3b3772fed557945beb00c452

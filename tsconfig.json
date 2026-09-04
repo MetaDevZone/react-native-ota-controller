@@ -10,9 +10,11 @@
     "forceConsistentCasingInFileNames": true,
     "ignoreDeprecations": "6.0",
     "noEmit": true,
+    "types": ["@jest/globals"],
     "paths": {
       "react-native-ota-controller": ["./src/index"]
     }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["**/__tests__/**", "**/__fixtures__/**", "**/__mocks__/**", "example"]
 }
