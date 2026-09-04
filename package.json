@@ -199,8 +199,8 @@
     "version": "0.63.0"
   },
   "bin": {
-    "ota": "./cli/index.js",
-    "ota-bundle": "./cli/index.js",
-    "react-native-ota-controller": "./cli/index.js"
+    "ota": "cli/index.js",
+    "ota-bundle": "cli/index.js",
+    "react-native-ota-controller": "cli/index.js"
   }
 }
